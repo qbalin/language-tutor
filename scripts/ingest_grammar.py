@@ -1,6 +1,6 @@
 """Index grammar reference files into a searchable per-language database.
 
-Drop grammar files (PDF, HTML, Markdown, or plain text) into
+Drop grammar files (PDF, EPUB, HTML, Markdown, or plain text) into
 languages/<lang>/grammar/ and run:
 
   python scripts/ingest_grammar.py --lang latin
@@ -94,8 +94,7 @@ def read_pdf(path: Path):
             yield f"page {p + 1}", clean(doc[p].get_text())
 
 
-def read_html(path: Path):
-    raw = path.read_text(encoding="utf-8", errors="replace")
+def split_html(raw: str, fallback_title: str):
     raw = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)
 
     def strip_tags(s):
@@ -106,7 +105,9 @@ def read_html(path: Path):
     parts = re.split(r"(?is)<h([1-4])[^>]*>(.*?)</h\1>", raw)
     # parts = [preamble, level, title, body, level, title, body, ...]
     if len(parts) < 4:
-        yield path.stem, strip_tags(raw)
+        body = strip_tags(raw)
+        if body:
+            yield fallback_title, body
         return
     preamble = strip_tags(parts[0])
     if len(preamble) > 200:
@@ -116,6 +117,61 @@ def read_html(path: Path):
         body = strip_tags(parts[i + 2])
         if body:
             yield title or "untitled", body
+
+
+def read_html(path: Path):
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    yield from split_html(raw, path.stem)
+
+
+def epub_spine_docs(zf):
+    """Content-document paths in reading order, via container.xml -> OPF."""
+    import posixpath
+    import urllib.parse
+    import xml.etree.ElementTree as ET
+
+    def local(tag):
+        return tag.rsplit("}", 1)[-1]
+
+    container = ET.fromstring(zf.read("META-INF/container.xml"))
+    opf_path = next(el.get("full-path") for el in container.iter()
+                    if local(el.tag) == "rootfile" and el.get("full-path"))
+    opf_dir = posixpath.dirname(opf_path)
+    opf = ET.fromstring(zf.read(opf_path))
+    manifest, spine = {}, []
+    for el in opf.iter():
+        if local(el.tag) == "item":
+            manifest[el.get("id")] = (el.get("href"), el.get("media-type") or "")
+        elif local(el.tag) == "itemref":
+            spine.append(el.get("idref"))
+    docs = []
+    for idref in spine:
+        href, media = manifest.get(idref, (None, ""))
+        if not href or "html" not in media:
+            continue
+        docs.append(posixpath.normpath(
+            posixpath.join(opf_dir, urllib.parse.unquote(href))))
+    return docs
+
+
+def read_epub(path: Path):
+    import zipfile
+    with zipfile.ZipFile(path) as zf:
+        try:
+            docs = epub_spine_docs(zf)
+        except Exception as exc:
+            print(f"  {path.name}: could not read EPUB spine ({exc}); "
+                  f"falling back to all HTML members", file=sys.stderr)
+            docs = []
+        if not docs:
+            docs = sorted(n for n in zf.namelist()
+                          if n.lower().endswith((".xhtml", ".html", ".htm")))
+        for doc in docs:
+            try:
+                raw = zf.read(doc).decode("utf-8", errors="replace")
+            except KeyError:
+                continue
+            yield from split_html(raw, Path(doc).stem)
 
 
 def read_text(path: Path):
@@ -131,7 +187,7 @@ def read_text(path: Path):
 
 
 READERS = {".pdf": read_pdf, ".html": read_html, ".htm": read_html,
-           ".md": read_text, ".txt": read_text}
+           ".epub": read_epub, ".md": read_text, ".txt": read_text}
 
 
 def main():
@@ -149,8 +205,8 @@ def main():
              else sorted(p for p in src_dir.iterdir()
                          if p.suffix.lower() in READERS))
     if not files:
-        out({"error": f"no grammar files found in {src_dir}; drop a PDF/HTML/"
-                      f"Markdown/text grammar there and re-run"})
+        out({"error": f"no grammar files found in {src_dir}; drop a PDF/EPUB/"
+                      f"HTML/Markdown/text grammar there and re-run"})
         sys.exit(1)
 
     import sqlite3

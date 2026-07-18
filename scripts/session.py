@@ -67,7 +67,7 @@ def cmd_start(args):
         else:
             steps.append(
                 f"No grammar. Ask the student to place a grammar reference "
-                f"(PDF/HTML/Markdown/text) in {lang_dir(lang) / 'grammar'} "
+                f"(PDF/EPUB/HTML/Markdown/text) in {lang_dir(lang) / 'grammar'} "
                 f"then run: python scripts/ingest_grammar.py --lang {lang}")
     if d["ok"] and g["ok"] and c["cards"] == 0:
         steps.append("No cards yet. Pick a first topic with `grammar.py toc` "

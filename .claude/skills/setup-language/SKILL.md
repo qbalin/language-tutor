@@ -17,7 +17,7 @@ description: Set up the dictionary and grammar for a new language. Use when sess
    `--kaikki-name "Ancient Greek"` (exact kaikki spelling) or
    `--url <direct link to the .jsonl.gz>`.
 
-2. **Grammar**: ask the student to copy a grammar reference (PDF, HTML,
+2. **Grammar**: ask the student to copy a grammar reference (PDF, EPUB, HTML,
    Markdown, or plain text) into `languages/<lang>/grammar/`. A well-structured
    reference grammar with numbered sections works best. Then:
 

@@ -18,7 +18,7 @@ is good enough to run it. Everything that can be deterministic is a script:
   [kaikki.org](https://kaikki.org)'s machine-readable Wiktionary extracts,
   including full inflection tables — "is *amāvisset* a real form of *amō*,
   and which one?" is a database lookup.
-- **Grammar rules** come from a reference grammar you provide (PDF/HTML/
+- **Grammar rules** come from a reference grammar you provide (PDF/EPUB/HTML/
   Markdown/text), indexed by section for full-text search, so every correction
   cites a section number instead of the model's imagination.
 

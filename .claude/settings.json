@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./ll:*)",
+      "Bash(ls:*)",
+      "Read(languages/**)",
+      "Read(scripts/**)"
+    ],
+    "deny": [
+      "WebFetch",
+      "WebSearch",
+      "Task"
+    ]
+  }
+}

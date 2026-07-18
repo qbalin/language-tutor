@@ -1,0 +1,12 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Language data (large downloads/DBs) and student progress — personal, never shared
+languages/*
+!languages/.gitkeep
+
+# Local overrides
+.claude/settings.local.json
+.DS_Store

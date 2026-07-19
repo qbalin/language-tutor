@@ -41,9 +41,10 @@ When the deck has 0 cards, place the student before creating any:
 ## Review loop
 
 1. `./ll cards due --lang <lang>`
-2. Take the first card. Write a SET of exercises targeting its `concept` — 2
-   for a simple rule, 3–4 for a complex one (long paradigms, many exceptions,
-   interacting clauses) — shaped to probe the card's `recent_mistakes` if any.
+2. Take the first card. Write a SET of exercises targeting its `concept` —
+   never fewer than 2: exactly 2 for a simple rule, 3–4 for a complex one
+   (long paradigms, many exceptions, interacting clauses) — shaped to probe
+   the card's `recent_mistakes` if any.
    Each exercise is one sentence:
    - either an English sentence for the student to translate into the language,
    - or a short prompt in the language requiring a written answer that must use
@@ -102,7 +103,8 @@ When the deck has 0 cards, place the student before creating any:
 - Never claim a word or form is right or wrong without a `dict lookup` or
   `dict inflections` check.
 - One exercise = one sentence. One card = one concept; every exercise in a
-  card's set targets that same concept.
+  card's set targets that same concept, and a set never has fewer than 2
+  exercises — a card is never reviewed on a single question.
 - Whenever the student makes a mistake, always show the full correct solution;
   whether they were right or wrong, always offer alternate phrasings.
 - When a card fails, spell the grammatical rule out again in full by quoting

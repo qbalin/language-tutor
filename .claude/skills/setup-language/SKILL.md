@@ -17,9 +17,23 @@ description: Set up the dictionary and grammar for a new language. Use when sess
    `--kaikki-name "Ancient Greek"` (exact kaikki spelling) or
    `--url <direct link to the .jsonl.gz>`.
 
-2. **Grammar**: ask the student to copy a grammar reference (PDF, EPUB, HTML,
-   Markdown, or plain text) into `languages/<lang>/grammar/`. A well-structured
-   reference grammar with numbered sections works best. Then:
+2. **Grammar**: ask the student to copy a grammar reference into
+   `languages/<lang>/grammar/`, and suggest the best format they can get,
+   in this order:
+
+   1. **Markdown (or plain text) with numbered headings** — e.g.
+      `## 28.1 Purpose clauses`. Content is indexed verbatim, and the leading
+      number in a heading becomes the section's citable ref. Keep each
+      section under ~6,000 characters and write paradigms as plain-text or
+      pipe tables.
+   2. **HTML** with `<h1>`–`<h4>` headings — good structure, but tables are
+      flattened during tag-stripping.
+   3. **EPUB** — works, but paradigm tables get scrambled and refs are
+      positional (`s37`) rather than matching the book's own numbering.
+   4. **PDF** — last resort; needs `pymupdf` and an embedded table of
+      contents. Scanned PDFs yield nothing.
+
+   Then:
 
    ```
    ./ll ingest_grammar --lang <lang>

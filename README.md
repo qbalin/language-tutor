@@ -30,7 +30,7 @@ are the same either way.
 Requires Python 3.9+ (macOS/Linux).
 
 ```sh
-git clone <this repo> && cd <repo>
+git clone git@github.com:qbalin/language-tutor.git && cd language-tutor
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
@@ -43,6 +43,10 @@ Everything is driven through `./ll` (it picks up the venv automatically):
 ```
 
 ## Set up a language (example: Latin)
+
+If you use Claude Code, you can skip the commands below: open the repo, say
+"set up Latin", and the `setup-language` skill walks through these steps with
+you (including which grammar formats index best). Manually:
 
 ```sh
 # 1. Dictionary: downloads the kaikki.org Wiktionary extract and builds

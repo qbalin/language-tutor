@@ -25,7 +25,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from common import DICT_DB, db_path, lang_dir, normalize, out
+from common import DICT_DB, JsonArgumentParser, db_path, lang_dir, normalize, out
 
 # wiktextract emits pseudo-form rows describing the table itself; skip them.
 SKIP_FORM_TAGS = {
@@ -189,8 +189,8 @@ def ingest(jsonl: Path, lang: str, limit: int = 0) -> None:
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = JsonArgumentParser(description=__doc__,
+                            formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--lang", required=True,
                     help="language name used for the local folder, e.g. latin")
     ap.add_argument("--kaikki-name", default=None,

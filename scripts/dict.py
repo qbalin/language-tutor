@@ -1,7 +1,8 @@
 """Query the local Wiktionary dictionary. All output is compact JSON.
 
-  lookup       identify a word (lemma, or which inflected form of which lemma)
-      python scripts/dict.py lookup amaverunt --lang latin
+  lookup       identify words (lemma, or which inflected form of which lemma);
+               pass several words to check a whole sentence in one call
+      python scripts/dict.py lookup urbe capta amaverunt --lang latin
   translate    English -> target language, via full-text search over glosses
       python scripts/dict.py translate love --lang latin
   inflections  list attested forms of a lemma, optionally filtered by tags
@@ -10,7 +11,7 @@
 import argparse
 import json
 
-from common import DICT_DB, fts_quote, normalize, open_db
+from common import DICT_DB, JsonArgumentParser, fts_quote, normalize, open_db
 
 MAX_MATCHES = 8
 
@@ -28,15 +29,15 @@ def entry_senses(row, max_senses):
     return result
 
 
-def cmd_lookup(conn, args):
-    q = normalize(args.word, args.lang)
+def lookup_word(conn, word, lang, max_senses):
+    q = normalize(word, lang)
     matches = []
     for row in conn.execute(
             "SELECT * FROM entries WHERE word_norm = ? LIMIT ?",
             (q, MAX_MATCHES)):
         matches.append({"word": row["word"], "pos": row["pos"],
                         "match": "entry",
-                        "senses": entry_senses(row, args.max_senses)})
+                        "senses": entry_senses(row, max_senses)})
     seen_lemmas = {(m["word"], m["pos"]) for m in matches}
     for row in conn.execute(
             """SELECT f.form, f.tags, e.word, e.pos, e.data
@@ -51,7 +52,7 @@ def cmd_lookup(conn, args):
                         "senses": entry_senses(row, 2)})
         if len(matches) >= MAX_MATCHES:
             break
-    result = {"query": args.word, "matches": matches}
+    result = {"query": word, "matches": matches}
     if not matches:
         sugg = [r["word"] for r in conn.execute(
             "SELECT DISTINCT word FROM entries WHERE word_norm LIKE ? LIMIT 5",
@@ -60,6 +61,11 @@ def cmd_lookup(conn, args):
         if sugg:
             result["similar"] = sugg
     return result
+
+
+def cmd_lookup(conn, args):
+    return {"results": [lookup_word(conn, w, args.lang, args.max_senses)
+                        for w in args.words]}
 
 
 def cmd_translate(conn, args):
@@ -107,12 +113,12 @@ def cmd_inflections(conn, args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = JsonArgumentParser(description=__doc__,
+                            formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("lookup", help="identify a word")
-    p.add_argument("word")
+    p = sub.add_parser("lookup", help="identify one or more words")
+    p.add_argument("words", nargs="+")
     p.add_argument("--lang", required=True)
     p.add_argument("--max-senses", type=int, default=4)
 

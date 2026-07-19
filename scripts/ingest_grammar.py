@@ -19,7 +19,7 @@ import re
 import sys
 from pathlib import Path
 
-from common import GRAMMAR_DB, db_path, lang_dir, out
+from common import GRAMMAR_DB, JsonArgumentParser, db_path, lang_dir, out
 
 SCHEMA = """
 DROP TABLE IF EXISTS sections;
@@ -191,8 +191,8 @@ READERS = {".pdf": read_pdf, ".html": read_html, ".htm": read_html,
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = JsonArgumentParser(description=__doc__,
+                            formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--lang", required=True)
     ap.add_argument("--file", default=None,
                     help="ingest a single file instead of everything in "

@@ -20,6 +20,10 @@ Examples:
       --prompt "Translate: with the city captured, ..." --answer "urbe capta erat ..." \
       --prompt "Translate: with the king expelled, ..." --answer "rege expulso ..." \
       --produced "urbe capta erat" --note "used erat inside the construction"
+  # same, without shell quoting: write the set to a JSON file
+  # [{"prompt": "...", "answer": "..."}, ...] and pass it (or "-" for stdin):
+  python scripts/cards.py grade ablative-absolute 1 --lang latin \
+      --pairs-file /tmp/set.json --note "used erat inside the construction"
   python scripts/cards.py history ablative-absolute --lang latin
   python scripts/cards.py inbox add --lang latin --produced "amavi puellam heri" \
       --note "wrong word order emphasis" --concept-hint "word order"
@@ -31,7 +35,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
-from common import CARDS_DB, open_db, out, die
+from common import CARDS_DB, JsonArgumentParser, open_db, out, die
 
 try:
     from fsrs import FSRS, Card, Rating
@@ -163,27 +167,56 @@ def cmd_create(conn, args):
             "note": "card is due immediately"}
 
 
+def read_pairs(path):
+    try:
+        text = sys.stdin.read() if path == "-" else open(path, encoding="utf-8").read()
+        pairs = json.loads(text)
+    except (OSError, json.JSONDecodeError) as e:
+        die(f"could not read exercise pairs from {path}: {e}")
+    if (not isinstance(pairs, list)
+            or not all(isinstance(p, dict) and p.get("prompt") and p.get("answer")
+                       for p in pairs)):
+        die('the pairs file must be a JSON list like '
+            '[{"prompt": "...", "answer": "..."}, ...] '
+            "with both keys non-empty in every item")
+    return pairs
+
+
 def cmd_grade(conn, args):
     rating = RATINGS.get(str(args.rating).lower())
     if not rating:
         die("rating must be 1-4 or again/hard/good/easy")
     prompts = args.prompt or []
     answers = args.answer or []
+    if args.pairs_file:
+        pairs = read_pairs(args.pairs_file)
+        prompts += [p["prompt"] for p in pairs]
+        answers += [p["answer"] for p in pairs]
     if not prompts:
         die("grading requires the exercises: repeat --prompt \"...\" "
-            "--answer \"...\" for each exercise in the set")
+            "--answer \"...\" for each exercise in the set, or pass them "
+            'as --pairs-file <file.json> ([{"prompt": ..., "answer": ...}, ...])')
     if len(prompts) != len(answers):
         die(f"got {len(prompts)} --prompt but {len(answers)} --answer; "
             "each --prompt needs a matching --answer")
     if rating <= 2:
         log_mistake(conn, args.card_id, args)
+    refs = get_card(conn, args.card_id)["grammar_refs"]
     due, review_id = apply_review(conn, args.card_id, rating)
     conn.executemany(
         "INSERT INTO exercises (card_id, review_id, prompt, answer) "
         "VALUES (?,?,?,?)",
         [(args.card_id, review_id, p, a) for p, a in zip(prompts, answers)])
+    note = ("now give a per-item verdict, the full correction for any mistake, "
+            "and one dict/grammar-verified alternate phrasing per item, then "
+            f"run: ./ll session next --lang {args.lang}")
+    if rating <= 2 and refs:
+        note = (f"card failed: run ./ll grammar show <ref> --lang {args.lang} "
+                f"for each of refs {refs} and quote the rule verbatim to the "
+                "student; " + note)
     return {"ok": True, "card": args.card_id, "rating": rating,
-            "exercises_recorded": len(prompts), "next_due": due.isoformat()}
+            "exercises_recorded": len(prompts), "next_due": due.isoformat(),
+            "note": note}
 
 
 def cmd_mistake(conn, args):
@@ -283,8 +316,8 @@ def cmd_inbox(conn, args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = JsonArgumentParser(description=__doc__,
+                            formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def lang(p):
@@ -307,6 +340,10 @@ def main():
                    help="an exercise as shown to the student; repeat per exercise")
     p.add_argument("--answer", action="append",
                    help="the student's answer; one per --prompt, same order")
+    p.add_argument("--pairs-file", default=None, metavar="FILE",
+                   help='JSON file (or "-" for stdin) with the whole set: '
+                        '[{"prompt": "...", "answer": "..."}, ...] — '
+                        "avoids shell quoting")
     p.add_argument("--produced", default=None,
                    help="what the student wrote (log with failing grades)")
     p.add_argument("--expected", default=None)

@@ -9,7 +9,7 @@
 """
 import argparse
 
-from common import GRAMMAR_DB, fts_quote, open_db, out
+from common import GRAMMAR_DB, JsonArgumentParser, fts_quote, open_db, out
 
 
 def cmd_search(conn, args):
@@ -54,8 +54,8 @@ def cmd_toc(conn, args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = JsonArgumentParser(description=__doc__,
+                            formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("search")

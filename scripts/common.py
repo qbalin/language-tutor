@@ -3,6 +3,7 @@
 All scripts print a single JSON document to stdout so an LLM (or any
 program) can parse the result without scraping prose.
 """
+import argparse
 import json
 import sqlite3
 import sys
@@ -15,6 +16,17 @@ LANGUAGES = ROOT / "languages"
 DICT_DB = "dictionary.db"
 GRAMMAR_DB = "grammar.db"
 CARDS_DB = "cards.db"
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser whose errors are JSON on stdout, like every other
+    output of these scripts, so a caller never has to scrape usage text."""
+
+    def error(self, message):
+        print(json.dumps({"error": message,
+                          "usage": self.format_usage().strip()},
+                         ensure_ascii=False))
+        sys.exit(2)
 
 
 def lang_dir(lang: str) -> Path:

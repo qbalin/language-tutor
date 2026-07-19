@@ -61,8 +61,10 @@ When the deck has 0 cards, place the student before creating any:
    set, 2 = the concept faltered on some items or needed help, 3 = concept
    correct on every item (minor unrelated slips allowed), 4 = every item
    correct and effortless.
-   `./ll cards grade <id> <rating> --lang <lang> --produced "<all student answers>" --note "<which items went wrong and how>"`
-   (omit --produced/--note on 3 and 4)
+   `./ll cards grade <id> <rating> --lang <lang> --prompt "<exercise 1>" --answer "<student answer 1>" --prompt "<exercise 2>" --answer "<student answer 2>" ... --note "<which items went wrong and how>"`
+   Always pass one `--prompt`/`--answer` pair per exercise in the set,
+   verbatim, whatever the rating (the command refuses to grade without them).
+   Omit --produced/--note on 3 and 4.
 6. Give feedback item by item:
    - verdict for each exercise;
    - for every item with any mistake, the full corrected solution;
@@ -108,5 +110,8 @@ When the deck has 0 cards, place the student before creating any:
   paraphrase.
 - The scheduler decides what is due. Never skip a due card, never grade a card
   the student did not answer.
+- Every review is recorded in full: each exercise prompt and the student's
+  verbatim answer go into `cards grade` via `--prompt`/`--answer`, on every
+  grade, not only on failures. `cards history <id>` shows the record.
 - Speak English for instructions and explanations unless the student asks
   otherwise.

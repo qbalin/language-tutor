@@ -3,9 +3,11 @@ a rating (1=again 2=hard 3=good 4=easy) and never computes intervals.
 
   due      cards due now (includes each card's recent mistakes)
   create   new concept card (due immediately)
-  grade    record a review; optionally log the mistake that caused it
+  grade    record a review with every prompt/answer pair of the exercise set;
+           optionally log the mistake that caused a failing grade
   mistake  log a mistake on a card without grading it
   show     full card detail
+  history  all reviews of a card with their date, rating, and prompt/answer pairs
   list     all cards with due dates
   inbox    holding pen for mistakes unrelated to the card under review:
              inbox add / inbox list / inbox resolve
@@ -15,7 +17,10 @@ Examples:
   python scripts/cards.py due --lang latin
   python scripts/cards.py create --lang latin --concept "ablative absolute" --refs "419,420"
   python scripts/cards.py grade ablative-absolute 1 --lang latin \
+      --prompt "Translate: with the city captured, ..." --answer "urbe capta erat ..." \
+      --prompt "Translate: with the king expelled, ..." --answer "rege expulso ..." \
       --produced "urbe capta erat" --note "used erat inside the construction"
+  python scripts/cards.py history ablative-absolute --lang latin
   python scripts/cards.py inbox add --lang latin --produced "amavi puellam heri" \
       --note "wrong word order emphasis" --concept-hint "word order"
   python scripts/cards.py inbox resolve 3 --lang latin --card word-order
@@ -55,6 +60,13 @@ CREATE TABLE IF NOT EXISTS reviews (
   card_id TEXT NOT NULL REFERENCES cards(id),
   ts TEXT NOT NULL,
   rating INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS exercises (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  card_id TEXT NOT NULL REFERENCES cards(id),
+  review_id INTEGER NOT NULL REFERENCES reviews(id),
+  prompt TEXT NOT NULL,
+  answer TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS inbox (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,9 +121,9 @@ def apply_review(conn, card_id, rating_int):
     card = FSRS().repeat(card, now())[Rating(rating_int)].card
     conn.execute("UPDATE cards SET fsrs = ? WHERE id = ?",
                  (json.dumps(card.to_dict(), default=str), card_id))
-    conn.execute("INSERT INTO reviews (card_id, ts, rating) VALUES (?,?,?)",
-                 (card_id, now().isoformat(), rating_int))
-    return card.due
+    cur = conn.execute("INSERT INTO reviews (card_id, ts, rating) VALUES (?,?,?)",
+                       (card_id, now().isoformat(), rating_int))
+    return card.due, cur.lastrowid
 
 
 # ---------------------------------------------------------------- commands
@@ -155,11 +167,23 @@ def cmd_grade(conn, args):
     rating = RATINGS.get(str(args.rating).lower())
     if not rating:
         die("rating must be 1-4 or again/hard/good/easy")
+    prompts = args.prompt or []
+    answers = args.answer or []
+    if not prompts:
+        die("grading requires the exercises: repeat --prompt \"...\" "
+            "--answer \"...\" for each exercise in the set")
+    if len(prompts) != len(answers):
+        die(f"got {len(prompts)} --prompt but {len(answers)} --answer; "
+            "each --prompt needs a matching --answer")
     if rating <= 2:
         log_mistake(conn, args.card_id, args)
-    due = apply_review(conn, args.card_id, rating)
+    due, review_id = apply_review(conn, args.card_id, rating)
+    conn.executemany(
+        "INSERT INTO exercises (card_id, review_id, prompt, answer) "
+        "VALUES (?,?,?,?)",
+        [(args.card_id, review_id, p, a) for p, a in zip(prompts, answers)])
     return {"ok": True, "card": args.card_id, "rating": rating,
-            "next_due": due.isoformat()}
+            "exercises_recorded": len(prompts), "next_due": due.isoformat()}
 
 
 def cmd_mistake(conn, args):
@@ -178,6 +202,22 @@ def cmd_show(conn, args):
             "due": f["due"], "reps": f["reps"], "lapses": f["lapses"],
             "suspended": bool(r["suspended"]),
             "recent_mistakes": recent_mistakes(conn, r["id"], 10)}
+
+
+def cmd_history(conn, args):
+    get_card(conn, args.card_id)
+    reviews = conn.execute(
+        "SELECT id, ts, rating FROM reviews WHERE card_id = ? ORDER BY id DESC",
+        (args.card_id,)).fetchall()
+    history = []
+    for rev in reviews:
+        pairs = conn.execute(
+            "SELECT prompt, answer FROM exercises WHERE review_id = ? ORDER BY id",
+            (rev["id"],)).fetchall()
+        history.append({"ts": rev["ts"], "rating": rev["rating"],
+                        "exercises": [{"prompt": p["prompt"],
+                                       "answer": p["answer"]} for p in pairs]})
+    return {"card": args.card_id, "reviews": len(history), "history": history}
 
 
 def cmd_list(conn, args):
@@ -236,7 +276,7 @@ def cmd_inbox(conn, args):
         (target, row["ts"], row["produced"], None, row["note"]))
     result = {"ok": True, "resolved_into": target}
     if args.rating:
-        due = apply_review(conn, target, RATINGS[str(args.rating).lower()])
+        due, _ = apply_review(conn, target, RATINGS[str(args.rating).lower()])
         result["next_due"] = due.isoformat()
     conn.execute("UPDATE inbox SET status='resolved' WHERE id=?", (row["id"],))
     return result
@@ -263,6 +303,10 @@ def main():
     p = lang(sub.add_parser("grade"))
     p.add_argument("card_id")
     p.add_argument("rating", help="1-4 or again/hard/good/easy")
+    p.add_argument("--prompt", action="append",
+                   help="an exercise as shown to the student; repeat per exercise")
+    p.add_argument("--answer", action="append",
+                   help="the student's answer; one per --prompt, same order")
     p.add_argument("--produced", default=None,
                    help="what the student wrote (log with failing grades)")
     p.add_argument("--expected", default=None)
@@ -275,6 +319,9 @@ def main():
     p.add_argument("--note", default=None)
 
     p = lang(sub.add_parser("show"))
+    p.add_argument("card_id")
+
+    p = lang(sub.add_parser("history"))
     p.add_argument("card_id")
 
     lang(sub.add_parser("list"))
@@ -301,8 +348,8 @@ def main():
     conn = open_db(args.lang, CARDS_DB, must_exist=False)
     conn.executescript(SCHEMA)
     handlers = {"due": cmd_due, "create": cmd_create, "grade": cmd_grade,
-                "mistake": cmd_mistake, "show": cmd_show, "list": cmd_list,
-                "stats": cmd_stats, "inbox": cmd_inbox}
+                "mistake": cmd_mistake, "show": cmd_show, "history": cmd_history,
+                "list": cmd_list, "stats": cmd_stats, "inbox": cmd_inbox}
     result = handlers[args.cmd](conn, args)
     conn.commit()
     out(result)

@@ -16,6 +16,27 @@ never guess what a command would have returned.
 3. If `ready` is false, follow each entry in `next_steps` exactly (use the
    `setup-language` skill), then re-run `session start`.
 
+## Placement quiz (first session only)
+
+When the deck has 0 cards, place the student before creating any:
+
+1. Run `./ll grammar toc --lang <lang>` and pick 5–8 grammar topics spanning
+   the book's progression from the first chapter to the last, roughly evenly
+   spaced.
+2. Write one English sentence to translate per topic, ordered easiest to
+   hardest. Present them all at once; tell the student to answer in order and
+   stop (or write "don't know") when they run out of depth. Do not reveal
+   expected answers.
+3. Verify every answer with `dict lookup` / `dict inflections` / `grammar`
+   commands before judging, as in the review loop.
+4. Tell the student where they placed, item by item, distinguishing grammar
+   errors from vocabulary slips.
+5. Create the first card on the earliest concept they got WRONG (with the
+   matching grammar refs), not on chapter 1. If everything was perfect, offer
+   the first topic beyond the quiz's hardest item. Vocabulary slips go to the
+   inbox, not to cards, unless the student agrees otherwise.
+6. Continue with the review loop (the new card is due immediately).
+
 ## Review loop
 
 1. `./ll cards due --lang <lang>`

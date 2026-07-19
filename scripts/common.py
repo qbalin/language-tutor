@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LANGUAGES = ROOT / "languages"
+PROGRESS = ROOT / "progress"
 
 DICT_DB = "dictionary.db"
 GRAMMAR_DB = "grammar.db"

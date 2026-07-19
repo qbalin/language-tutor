@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 PY="$ROOT/.venv/bin/python3"
 [ -x "$PY" ] || PY=python3
 if [ $# -eq 0 ]; then
-  echo "usage: ./ll <session|dict|grammar|cards|ingest_dictionary|ingest_grammar> [args...]" >&2
+  echo "usage: ./ll <session|dict|grammar|cards|checkpoint|ingest_dictionary|ingest_grammar> [args...]" >&2
   exit 2
 fi
 CMD="$1"; shift

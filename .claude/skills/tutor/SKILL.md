@@ -21,7 +21,9 @@ field in a command's output is an instruction to you — follow it.
    - `inbox`, `new_topic`, `done` — triage or wrap up with the student as
      instructed.
 3. After completing each instruction, run `./ll session next` again. Stop when
-   the state is `done` or the student stops.
+   the state is `done` or the student stops. Either way, end by running
+   `./ll checkpoint sync` to back up progress, and follow any `note` in its
+   output.
 
 ## Review (state `review`)
 

@@ -7,6 +7,9 @@ __pycache__/
 languages/*
 !languages/.gitkeep
 
+# Progress checkpoints — the student's own git repo with a PRIVATE remote
+progress/
+
 # Local overrides
 .claude/settings.local.json
 .DS_Store

@@ -12,6 +12,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
+from checkpoint import auto_save
 from common import (CARDS_DB, DICT_DB, GRAMMAR_DB, LANGUAGES,
                     JsonArgumentParser, db_path, lang_dir, normalize,
                     open_db, out)
@@ -213,6 +214,7 @@ def cmd_next(args):
              "instruction": "the language is not set up yet; complete "
                             f"next_steps (use the setup-language skill), {rerun}"})
         return
+    auto_save(lang)  # at most one snapshot per UTC day: the rollback point
     c = cards_status(lang)
     if c["cards"] == 0:
         out({"lang": lang, "state": "placement",
@@ -270,12 +272,14 @@ def cmd_next(args):
                  "deck done and inbox empty; tell the student, then offer "
                  "next_topic (or an alternative) as described in note. If they "
                  f"agree, after creating the card {rerun} — it is due "
-                 "immediately. If they decline, the session is over."})
+                 "immediately. If they decline, run ./ll checkpoint sync to "
+                 "back up progress; the session is over."})
         return
     out({"lang": lang, "state": "done",
          "instruction": "deck done, inbox empty, every grammar section already "
-                        "has a card; tell the student the session is over and "
-                        "ask what they would like to do"})
+                        "has a card; run ./ll checkpoint sync to back up "
+                        "progress, then tell the student the session is over "
+                        "and ask what they would like to do"})
 
 
 def cmd_languages(args):

@@ -157,11 +157,58 @@ llama.cpp, ...) works too — expose "run `./ll ...`" as the only tool and reuse
 | `./ll grammar search "..."` / `show REF` / `toc` | Search / read / list grammar sections |
 | `./ll cards due / create / grade / show / list / stats` | FSRS concept deck |
 | `./ll cards inbox add / list / resolve` | Park and triage off-topic mistakes |
+| `./ll checkpoint save / list / restore / sync` | Snapshot, inspect, roll back, and push progress backups |
 
 All state lives under `languages/<lang>/` (dictionary.db, grammar.db,
 cards.db, grammar/ sources). That directory is your personal data and is
 `.gitignore`d — deleting `cards.db` resets your progress for that language;
-the dictionary and grammar are rebuildable.
+the dictionary and grammar are rebuildable. `cards.db` is not — which is what
+checkpoints are for.
+
+## Back up your progress
+
+`./ll checkpoint` snapshots each language's `cards.db` (deck, review history,
+mistakes, inbox) as portable JSON under `progress/<lang>/` — one timestamped
+file per state, deduplicated by content, human-readable, diff-friendly:
+
+```sh
+./ll checkpoint save --lang latin             # snapshot now (no-op if unchanged)
+./ll checkpoint list --lang latin
+./ll checkpoint restore latest --lang latin   # or a file name from `list`
+./ll checkpoint sync                          # snapshot every language, commit + push
+```
+
+You rarely need to run these yourself: the first `session next` of the day
+snapshots the pre-session state automatically (your rollback point if a
+session goes wrong — restore it and the session never happened; `restore`
+also saves the current state first, so it is safe to experiment), and the
+tutor runs `checkpoint sync` when a session ends.
+
+To make backups survive your machine, turn `progress/` into its own git repo
+with a **private** remote — one-time setup, and it must stay separate from
+this (public) repo because checkpoints contain your personal review history,
+your verbatim answers included. `progress/` is `.gitignore`d here for exactly
+that reason:
+
+```sh
+cd progress
+git init
+gh repo create language-progress --private --source . --push
+# without gh: create a private repo on your host, then
+# git remote add origin <url> && git push -u origin HEAD
+```
+
+From then on `./ll checkpoint sync` commits and pushes automatically.
+
+Moving to a new machine:
+
+```sh
+git clone git@github.com:qbalin/language-tutor.git && cd language-tutor
+git clone <your private progress repo> progress
+./ll checkpoint restore latest --lang latin   # rebuilds cards.db
+```
+
+then rebuild the dictionary and grammar as in "Set up a language".
 
 ## Design notes
 

@@ -11,3 +11,6 @@ person talking to you is the student.
   `./ll dict ...` and rules with `./ll grammar ...`, and cite what you find.
 - Card scheduling is handled by FSRS inside `./ll cards ...`; never compute
   or promise review dates yourself.
+- Progress backups are `./ll checkpoint save/list/restore/sync` (snapshots
+  in `progress/`); run `sync` when a session ends, restore only if the
+  student asks to roll back.

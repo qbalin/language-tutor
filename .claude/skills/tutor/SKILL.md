@@ -30,7 +30,8 @@ When the deck has 0 cards, place the student before creating any:
 3. Verify every answer with `dict lookup` / `dict inflections` / `grammar`
    commands before judging, as in the review loop.
 4. Tell the student where they placed, item by item, distinguishing grammar
-   errors from vocabulary slips.
+   errors from vocabulary slips. For every item they got wrong or skipped,
+   give the full correct solution.
 5. Create the first card on the earliest concept they got WRONG (with the
    matching grammar refs), not on chapter 1. If everything was perfect, offer
    the first topic beyond the quiz's hardest item. Vocabulary slips go to the
@@ -40,24 +41,38 @@ When the deck has 0 cards, place the student before creating any:
 ## Review loop
 
 1. `./ll cards due --lang <lang>`
-2. Take the first card. Write ONE exercise targeting its `concept`, shaped to
-   probe the card's `recent_mistakes` if any:
+2. Take the first card. Write a SET of exercises targeting its `concept` — 2
+   for a simple rule, 3–4 for a complex one (long paradigms, many exceptions,
+   interacting clauses) — shaped to probe the card's `recent_mistakes` if any.
+   Each exercise is one sentence:
    - either an English sentence for the student to translate into the language,
    - or a short prompt in the language requiring a written answer that must use
      the concept.
-   Do not reveal the expected answer.
-3. Wait for the student's written answer.
+   Vary vocabulary and the forms exercised so the set covers different facets
+   of the concept. Number the exercises, present them all at once, and ask the
+   student to answer all of them. Do not reveal the expected answers.
+3. Wait for the student's written answers.
 4. Verify before judging — never trust your own recall of the language:
    - any word you are unsure of: `./ll dict lookup <word> --lang <lang>`
    - to check a conjugation/declension: `./ll dict inflections <lemma> --lang <lang> --tags "<tense/case/number>"`
    - the rule involved: `./ll grammar search "<topic>" --lang <lang>` then
      `./ll grammar show <ref> --lang <lang>`
-5. Grade honestly: 1 = failed the concept, 2 = major flaws or needed help,
-   3 = correct, 4 = correct and effortless.
-   `./ll cards grade <id> <rating> --lang <lang> --produced "<student answer>" --note "<what went wrong>"`
+5. Grade the card once, on the whole set: 1 = failed the concept across the
+   set, 2 = the concept faltered on some items or needed help, 3 = concept
+   correct on every item (minor unrelated slips allowed), 4 = every item
+   correct and effortless.
+   `./ll cards grade <id> <rating> --lang <lang> --produced "<all student answers>" --note "<which items went wrong and how>"`
    (omit --produced/--note on 3 and 4)
-6. Tell the student: verdict, a corrected version, and why — citing the grammar
-   section refs and dictionary results you actually retrieved this session.
+6. Give feedback item by item:
+   - verdict for each exercise;
+   - for every item with any mistake, the full corrected solution;
+   - for every item, right or wrong, at least one alternate phrasing —
+     verified with the same dict/grammar checks;
+   - why — citing the grammar section refs and dictionary results you
+     actually retrieved this session.
+   If the card failed (rating 1 or 2), re-run `./ll grammar show <ref>` for
+   the card's refs and quote the rule in full, verbatim from the grammar —
+   do not paraphrase it.
 7. If the answer contains a mistake UNRELATED to the current card, do not touch
    other cards mid-session. Record it:
    `./ll cards inbox add --lang <lang> --produced "..." --note "..." --concept-hint "..."`
@@ -75,8 +90,8 @@ When the deck has 0 cards, place the student before creating any:
 3. Offer a new topic: `./ll grammar toc --lang <lang>`, pick the earliest
    section not already covered by a card. If the student agrees:
    `./ll cards create --lang <lang> --concept "<topic>" --refs "<ref>"`,
-   briefly teach it from `./ll grammar show <ref>`, then run one exercise on it
-   (it is due immediately).
+   briefly teach it from `./ll grammar show <ref>`, then run an exercise set on
+   it as in the review loop (it is due immediately).
 
 ## Rules
 
@@ -84,7 +99,13 @@ When the deck has 0 cards, place the student before creating any:
   session.
 - Never claim a word or form is right or wrong without a `dict lookup` or
   `dict inflections` check.
-- One exercise = one sentence, one concept.
+- One exercise = one sentence. One card = one concept; every exercise in a
+  card's set targets that same concept.
+- Whenever the student makes a mistake, always show the full correct solution;
+  whether they were right or wrong, always offer alternate phrasings.
+- When a card fails, spell the grammatical rule out again in full by quoting
+  the grammar section verbatim (`grammar show`), never from memory or in
+  paraphrase.
 - The scheduler decides what is due. Never skip a due card, never grade a card
   the student did not answer.
 - Speak English for instructions and explanations unless the student asks

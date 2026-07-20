@@ -13,9 +13,9 @@ import sqlite3
 from datetime import datetime, timezone
 
 from checkpoint import auto_save
-from common import (CARDS_DB, DICT_DB, FREQ_DB, GRAMMAR_DB, LANGUAGES,
-                    JsonArgumentParser, db_path, lang_dir, normalize,
-                    open_db, out)
+from common import (CARDS_DB, DICT_DB, GRAMMAR_DB, LANGUAGES,
+                    JsonArgumentParser, db_path, freq_bands, lang_dir,
+                    normalize, open_db, out)
 
 
 def dict_status(lang):
@@ -432,12 +432,16 @@ def cmd_next(args):
         # If a corpus frequency list exists, tell the tutor to seed vocabulary
         # from it, with a rank ceiling scaled to how far the student is through
         # the real topics (raw section index is useless here — the whole course
-        # sits in the book's first quarter, the rest is back matter).
+        # sits in the book's first quarter, the rest is back matter). The band
+        # cutoffs are the corpus's own coverage tiers, shared with dict sample.
         vocab = ""
-        if db_path(lang, FREQ_DB).exists():
+        bands = freq_bands(lang)
+        if bands:
             frac = (sum(1 for t in topics if t["pos"] <= fpos) / len(topics)
                     if fpos is not None and topics else 0.4)
-            max_rank = 600 if frac < 0.33 else 1500 if frac < 0.66 else 4000
+            max_rank = (bands["beginner"] if frac < 0.33
+                        else bands["intermediate"] if frac < 0.66
+                        else bands["advanced"])
             vocab = (" Before writing, draw fresh vocabulary with ./ll dict "
                      f"sample --lang {lang} --count 15 --max-rank {max_rank} "
                      "(add --pos noun/verb/adj to target one, --exclude for "

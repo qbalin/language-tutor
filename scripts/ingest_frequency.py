@@ -136,6 +136,29 @@ def build_counts(dict_conn, surface, lang):
     return lemma_count, lemma_word, resolved
 
 
+def coverage_cutoffs(ranked):
+    """Rank cutoffs for the beginner/intermediate/advanced vocabulary bands,
+    derived from the corpus itself: the top-N lemmas needed to cover 80 / 90 /
+    95% of running text. These self-calibrate to each language's distribution
+    instead of hard-coded ranks. Returns {band_beginner, ...} rank ints."""
+    total = sum(c for _, c in ranked) or 1
+    want = {"band_beginner": 0.80, "band_intermediate": 0.90,
+            "band_advanced": 0.95}
+    marks, cum = {}, 0.0
+    for i, (_, c) in enumerate(ranked, 1):
+        cum += c
+        for key, thr in want.items():
+            if key not in marks and cum / total >= thr:
+                marks[key] = i
+    n = len(ranked)
+    # tiny corpus that never reaches a threshold: fall back to quarters
+    b = marks.get("band_beginner", max(1, n // 4))
+    im = max(marks.get("band_intermediate", n // 2), b + 1)
+    a = max(marks.get("band_advanced", n), im + 1)
+    return {"band_beginner": min(b, n), "band_intermediate": min(im, n),
+            "band_advanced": min(a, n)}
+
+
 def main():
     ap = JsonArgumentParser(description=__doc__,
                             formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -168,11 +191,10 @@ def main():
         [(lemma_word[(wn, pos)], wn, pos, round(cnt, 3), i)
          for i, ((wn, pos), cnt) in enumerate(ranked, 1)])
     total_tokens = sum(per_file.values())
-    conn.executemany(
-        "INSERT INTO meta (key, value) VALUES (?,?)",
-        [("total_lemmas", str(len(ranked))),
-         ("total_tokens", str(total_tokens)),
-         ("resolved_tokens", str(int(resolved)))])
+    meta = {"total_lemmas": len(ranked), "total_tokens": total_tokens,
+            "resolved_tokens": int(resolved), **coverage_cutoffs(ranked)}
+    conn.executemany("INSERT INTO meta (key, value) VALUES (?,?)",
+                     [(k, str(v)) for k, v in meta.items()])
     conn.commit()
     conn.close()
 

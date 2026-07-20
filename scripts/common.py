@@ -50,6 +50,28 @@ def open_db(lang: str, name: str, must_exist: bool = True) -> sqlite3.Connection
     return conn
 
 
+def freq_bands(lang: str):
+    """Coverage-derived rank cutoffs for the vocabulary difficulty bands
+    (beginner/intermediate/advanced), stored in frequencies.db at ingest time
+    and shared by every caller so there is one source of truth. None when the
+    language has no frequency list yet."""
+    path = db_path(lang, FREQ_DB)
+    if not path.exists():
+        return None
+    conn = sqlite3.connect(path)
+    try:
+        meta = dict(conn.execute("SELECT key, value FROM meta").fetchall())
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+    try:
+        return {b: int(meta["band_" + b])
+                for b in ("beginner", "intermediate", "advanced")}
+    except (KeyError, ValueError):
+        return None
+
+
 def out(obj) -> None:
     print(json.dumps(obj, ensure_ascii=False, indent=1, default=str))
 

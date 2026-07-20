@@ -15,16 +15,13 @@ import argparse
 import json
 import sqlite3
 
-from common import (DICT_DB, FREQ_DB, JsonArgumentParser, db_path, fts_quote,
-                    normalize, open_db)
+from common import (DICT_DB, FREQ_DB, JsonArgumentParser, db_path, freq_bands,
+                    fts_quote, normalize, open_db)
 
 MAX_MATCHES = 8
 
-# Frequency-rank bands for `sample`, so difficulty can be asked for by name.
-BANDS = {"beginner": (1, 500), "intermediate": (501, 2000),
-         "advanced": (2001, 10 ** 9)}
+BAND_NAMES = ("beginner", "intermediate", "advanced")
 CONTENT_POS = ("noun", "verb", "adj", "adv")   # default: real vocabulary
-DEFAULT_MAX_RANK = 2000                         # skip rare words unless asked
 
 
 def entry_senses(row, max_senses):
@@ -142,9 +139,14 @@ def cmd_sample(conn, args):
                         f"languages/{args.lang}/texts/ and running "
                         f"./ll ingest_frequency --lang {args.lang}, or just "
                         "vary vocabulary yourself"}
-    lo, hi = 1, DEFAULT_MAX_RANK
+    bands = freq_bands(args.lang)   # {beginner, intermediate, advanced} rank cutoffs
+    b, i, a = ((bands["beginner"], bands["intermediate"], bands["advanced"])
+               if bands else (500, 2000, 10 ** 9))
+    # default ceiling: the intermediate coverage cutoff (common-ish words)
+    lo, hi = 1, i
     if args.band:
-        lo, hi = BANDS[args.band]
+        lo, hi = {"beginner": (1, b), "intermediate": (b + 1, i),
+                  "advanced": (i + 1, a)}[args.band]
     if args.min_rank is not None:
         lo = args.min_rank
     if args.max_rank is not None:
@@ -214,9 +216,10 @@ def main():
     p.add_argument("--pos", default=None,
                    help="restrict to one part of speech (noun/verb/adj/adv/...); "
                         "default is content words (noun, verb, adj, adv)")
-    p.add_argument("--band", choices=sorted(BANDS),
-                   help="frequency band: beginner (top 500), intermediate "
-                        "(501-2000), advanced (rarer)")
+    p.add_argument("--band", choices=BAND_NAMES,
+                   help="frequency band, sized to the corpus by text coverage: "
+                        "beginner (~80%% coverage), intermediate (~90%%), "
+                        "advanced (~95%%)")
     p.add_argument("--min-rank", type=int, default=None,
                    help="lowest frequency rank to include (overrides --band)")
     p.add_argument("--max-rank", type=int, default=None,

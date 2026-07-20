@@ -43,7 +43,24 @@ description: Set up the dictionary and grammar for a new language. Use when sess
 
 3. **Verify**: `./ll session start --lang <lang>` must report `"ready": true`.
 
-4. **Prune apparatus (optional)**: if `./ll session next-topic` proposes
+4. **Vocabulary frequency (optional)**: so exercises mobilize richer,
+   level-appropriate vocabulary instead of the same stock words, build a
+   corpus frequency list. Ask the student to drop a few plain-text works —
+   Project Gutenberg classics in the target language work well
+   (`www.gutenberg.org/browse/languages/<code>`) — into
+   `languages/<lang>/texts/`, then:
+
+   ```
+   ./ll ingest_frequency --lang <lang>
+   ```
+
+   This needs the dictionary built first (it resolves each word to its lemma
+   against it). A few varied authors give better coverage than one; a
+   language works fine without this step — `./ll dict sample` and the review
+   loop just fall back to varying vocabulary from your own knowledge. Re-run
+   whenever texts are added or replaced.
+
+5. **Prune apparatus (optional)**: if `./ll session next-topic` proposes
    non-topics — the book's own reading passages, exercise sections, per-chapter
    section marks — list those title substrings in
    `languages/<lang>/grammar_skip.txt` (one per line, `#` comments; see

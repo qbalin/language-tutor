@@ -33,8 +33,13 @@ field in a command's output is an instruction to you — follow it.
    translate into the language, or a short prompt in the language requiring
    the concept. Vary vocabulary and forms, and pitch vocabulary and sentence
    difficulty at the student's overall level (the instruction quotes it), not
-   at the minimum the concept needs. Number them, present them all at
-   once, do not reveal expected answers, and wait for the student's answers.
+   at the minimum the concept needs. To avoid recycling the same handful of
+   words, seed each set from `./ll dict sample --lang <lang>` when the
+   instruction offers it (a corpus frequency list exists for the language):
+   build the sentences around those words, passing `--exclude` for words you
+   already used; otherwise vary vocabulary from your own knowledge. Number
+   them, present them all at once, do not reveal expected answers, and wait
+   for the student's answers.
 2. Verify before judging — never trust your own recall of the language:
    - words: `./ll dict lookup <word> <word> ... --lang <lang>` — batch every
      word you are unsure of into one call;

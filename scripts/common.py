@@ -17,6 +17,7 @@ PROGRESS = ROOT / "progress"
 DICT_DB = "dictionary.db"
 GRAMMAR_DB = "grammar.db"
 CARDS_DB = "cards.db"
+FREQ_DB = "frequencies.db"
 
 
 class JsonArgumentParser(argparse.ArgumentParser):

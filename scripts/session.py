@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from checkpoint import auto_save
-from common import (CARDS_DB, DICT_DB, GRAMMAR_DB, LANGUAGES,
+from common import (CARDS_DB, DICT_DB, FREQ_DB, GRAMMAR_DB, LANGUAGES,
                     JsonArgumentParser, db_path, lang_dir, normalize,
                     open_db, out)
 
@@ -428,6 +428,18 @@ def cmd_next(args):
                  " Pitch vocabulary and sentence difficulty at the student's "
                  f"overall level — around \"{display_title(rows[fpos])}\" — "
                  "not at the minimum the concept needs.")
+        # If a corpus frequency list exists, tell the tutor to seed vocabulary
+        # from it (level-appropriate rank ceiling from the frontier position)
+        # instead of reaching for the same stock words.
+        vocab = ""
+        if db_path(lang, FREQ_DB).exists():
+            frac = (fpos + 1) / len(rows) if fpos is not None and rows else 0.4
+            max_rank = 600 if frac < 0.33 else 1500 if frac < 0.66 else 4000
+            vocab = (" Before writing, draw fresh vocabulary with ./ll dict "
+                     f"sample --lang {lang} --count 15 --max-rank {max_rank} "
+                     "(add --pos noun/verb/adj to target one, --exclude for "
+                     "words already used) and build the sentences around those "
+                     "words rather than the same stock vocabulary.")
         out({"lang": lang, "state": "review", "due_count": c["due_now"],
              "card": card,
              "instruction":
@@ -435,7 +447,7 @@ def cmd_next(args):
                  "exactly 2 for a simple rule, 3-4 for a complex one, never "
                  "fewer than 2 — one sentence each (English to translate, or a "
                  "prompt in the language), probing recent_mistakes if any."
-                 f"{level} "
+                 f"{level}{vocab} "
                  "Number them, present all at once, do not reveal answers, and "
                  "wait for the student. Verify their answers with ./ll dict "
                  f"lookup <word> <word> ... --lang {lang} (batch the words), "

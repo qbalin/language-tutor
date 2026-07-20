@@ -16,10 +16,12 @@ PDF support needs pymupdf: .venv/bin/pip install pymupdf
 import argparse
 import html as htmllib
 import re
+import sqlite3
 import sys
 from pathlib import Path
 
-from common import GRAMMAR_DB, JsonArgumentParser, db_path, lang_dir, out
+from common import (CARDS_DB, GRAMMAR_DB, JsonArgumentParser, db_path,
+                    lang_dir, out)
 
 SCHEMA = """
 DROP TABLE IF EXISTS sections;
@@ -94,17 +96,33 @@ def read_pdf(path: Path):
             yield f"page {p + 1}", clean(doc[p].get_text())
 
 
+# Publisher headings marked as styled paragraphs rather than <h*> tags
+# (class contains "head", e.g. Wheelock's p.chapterHeadA/B/C). <p> only:
+# a div with a head class typically wraps the real <h*> tag. The trailing
+# letter of the class carries the depth (HeadA > HeadB > HeadC).
+STYLED_HEAD_RE = re.compile(
+    r'(?is)<p\b[^>]*class="([^"]*head[^"]*)"[^>]*>(.*?)</p>')
+
+
+def styled_rank(cls):
+    m = re.search(r"head\s*([a-z0-9]?)", cls, re.I)
+    return {"a": 3, "b": 4}.get(((m and m.group(1)) or "").lower(), 5)
+
+
 def split_html(raw: str, fallback_title: str):
     raw = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)
+    raw = STYLED_HEAD_RE.sub(
+        lambda m: '<h{0} data-styled="y">{1}</h{0}>'.format(
+            styled_rank(m.group(1)), m.group(2)), raw)
 
     def strip_tags(s):
         s = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>|</tr>", "\n", s)
         s = re.sub(r"<[^>]+>", " ", s)
         return clean(htmllib.unescape(s))
 
-    parts = re.split(r"(?is)<h([1-4])[^>]*>(.*?)</h\1>", raw)
-    # parts = [preamble, level, title, body, level, title, body, ...]
-    if len(parts) < 4:
+    parts = re.split(r"(?is)<h([1-6])([^>]*)>(.*?)</h\1>", raw)
+    # parts = [preamble, level, attrs, title, level, attrs, title, body, ...]
+    if len(parts) < 5:
         body = strip_tags(raw)
         if body:
             yield fallback_title, body
@@ -112,11 +130,20 @@ def split_html(raw: str, fallback_title: str):
     preamble = strip_tags(parts[0])
     if len(preamble) > 200:
         yield "preamble", preamble
-    for i in range(1, len(parts) - 2, 3):
-        title = strip_tags(parts[i + 1])
-        body = strip_tags(parts[i + 2])
+    stack = []  # (level, title) of the headings enclosing the current one
+    for i in range(1, len(parts) - 3, 4):
+        level, styled = int(parts[i]), "data-styled" in parts[i + 1]
+        title = strip_tags(parts[i + 2])
+        body = strip_tags(parts[i + 3])
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        # styled headings inherit their region: "Irregular Vīs (GRAMMATICA)"
+        # — the parent tells apparatus subsections apart from grammar ones
+        full = (f"{title} ({stack[-1][1][:40]})" if styled and stack and title
+                else title)
+        stack.append((level, title))
         if body:
-            yield title or "untitled", body
+            yield full or "untitled", body
 
 
 def read_html(path: Path):
@@ -190,6 +217,103 @@ READERS = {".pdf": read_pdf, ".html": read_html, ".htm": read_html,
            ".epub": read_epub, ".md": read_text, ".txt": read_text}
 
 
+# --------------------------------------------------------- ref migration
+# Re-ingesting renumbers positional refs, but the deck (cards.grammar_refs,
+# known_sections, the frontier setting) cites the old ones. An old ref may
+# even still exist in the rebuilt index while pointing at entirely different
+# content, so every citation is re-resolved by matching the old section's
+# content into the new sections, not by checking whether the ref resolves.
+
+def squash(text):
+    return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
+def load_sections(lang):
+    dbfile = db_path(lang, GRAMMAR_DB)
+    if not dbfile.exists():
+        return []
+    conn = sqlite3.connect(dbfile)
+    try:
+        rows = conn.execute(
+            "SELECT ref, title, content FROM sections ORDER BY id").fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    conn.close()
+    return rows
+
+
+def remap_deck_refs(lang, old_sections):
+    cards_file = db_path(lang, CARDS_DB)
+    if not cards_file.exists() or not old_sections:
+        return None
+    new = [(r, t, squash(c)) for r, t, c in load_sections(lang)]
+    old_by_ref = {r: (t, c) for r, t, c in old_sections}
+    cache, unmatched = {}, set()
+
+    def match(old_title, blob):
+        # a new section that starts inside the old one (finer splits land on
+        # the first concept the old section contained) ...
+        for nref, _, ncontent in new:
+            if len(ncontent) >= 40 and ncontent[:80] in blob:
+                return nref
+        # ... or, for a chunk that began mid-concept, the new section that
+        # contains the old chunk's opening ...
+        if len(blob) >= 60:
+            for nref, _, ncontent in new:
+                if blob[:60] in ncontent:
+                    return nref
+        # ... or at worst the first new section with the same title
+        return next((nref for nref, ntitle, _ in new if ntitle == old_title),
+                    None)
+
+    def remap(ref):
+        ref = ref.strip()
+        if not ref or ref not in old_by_ref:
+            return ref  # not a citation into the old index; leave untouched
+        if ref not in cache:
+            old_title, old_content = old_by_ref[ref]
+            target = match(old_title, squash(old_content))
+            if target is None:
+                unmatched.add(ref)
+                target = ref
+            cache[ref] = target
+        return cache[ref]
+
+    conn = sqlite3.connect(cards_file)
+    conn.row_factory = sqlite3.Row
+    changes = {}
+    for row in conn.execute("SELECT id, grammar_refs FROM cards").fetchall():
+        refs = [x.strip() for x in (row["grammar_refs"] or "").split(",")
+                if x.strip()]
+        remapped = list(dict.fromkeys(remap(x) for x in refs))
+        if remapped != refs:
+            conn.execute("UPDATE cards SET grammar_refs = ? WHERE id = ?",
+                         (",".join(remapped), row["id"]))
+            changes[f"card:{row['id']}"] = ",".join(remapped)
+    try:
+        for row in conn.execute("SELECT ref FROM known_sections").fetchall():
+            nref = remap(row["ref"])
+            if nref != row["ref"]:
+                conn.execute(
+                    "INSERT OR IGNORE INTO known_sections (ref, ts, reason) "
+                    "SELECT ?, ts, reason FROM known_sections WHERE ref = ?",
+                    (nref, row["ref"]))
+                conn.execute("DELETE FROM known_sections WHERE ref = ?",
+                             (row["ref"],))
+                changes[f"known:{row['ref']}"] = nref
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = 'frontier'").fetchone()
+        if row and remap(row["value"]) != row["value"]:
+            conn.execute("UPDATE settings SET value = ? WHERE key = 'frontier'",
+                         (remap(row["value"]),))
+            changes["frontier"] = remap(row["value"])
+    except sqlite3.OperationalError:
+        pass  # deck predates the known_sections/settings tables
+    conn.commit()
+    conn.close()
+    return {"remapped": changes, "unmapped_citations": sorted(unmatched)}
+
+
 def main():
     ap = JsonArgumentParser(description=__doc__,
                             formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -209,7 +333,7 @@ def main():
                       f"HTML/Markdown/text grammar there and re-run"})
         sys.exit(1)
 
-    import sqlite3
+    old_sections = load_sections(args.lang)
     dbfile = db_path(args.lang, GRAMMAR_DB)
     conn = sqlite3.connect(dbfile)
     conn.executescript(SCHEMA)
@@ -236,7 +360,15 @@ def main():
         per_file[path.name] = count
     conn.commit()
     conn.close()
-    out({"ok": True, "db": str(dbfile), "sections": n, "files": per_file})
+    result = {"ok": True, "db": str(dbfile), "sections": n, "files": per_file}
+    migration = remap_deck_refs(args.lang, old_sections)
+    if migration:
+        result["ref_migration"] = migration
+        if migration["unmapped_citations"]:
+            result["note"] = ("some deck citations could not be repointed to "
+                              "the rebuilt sections; review them with "
+                              "./ll cards list and fix the refs by hand")
+    out(result)
 
 
 if __name__ == "__main__":

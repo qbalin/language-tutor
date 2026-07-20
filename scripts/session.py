@@ -148,12 +148,17 @@ FRONT_MATTER = ("contents", "foreword", "preface", "introd", "acknowledg",
                 "appendix", "footnote", "backmatter", "back matter",
                 "answer key", "key to", "self-tutorial", "searchable",
                 "loci antiq", "loci imm", "vocabvla", "svmmarivm",
-                "sententiae antiq")
+                # recurring per-chapter apparatus (Wheelock's section marks;
+                # subsections inherit them as a "(REGION)" title suffix, so
+                # these also catch e.g. reading passages under LĒCTIŌ)
+                "grammatica (", "lectio", "exercitatio", "exercises for",
+                "sententiae", "latina est", "scripta in parietibus",
+                "praefati", "authors and works", "alphabet", "pronunciation")
 
 # Content openings that betray publishing apparatus (series lists, copyright
 # pages, book blurbs) whatever the section is titled.
 APPARATUS_CONTENT = ("other books in", "all rights reserved",
-                     "library of congress", "first published")
+                     "library of congress", "first published", "welcome to")
 
 MIN_TOPIC_CHARS = 500  # anything shorter is book apparatus, not a lesson
 
@@ -191,6 +196,10 @@ def topic_inventory(rows, covered):
         seen.add(title)
         norm = normalize(title)
         if (any(k in norm for k in FRONT_MATTER)
+                # a letter or two with no numbering ("G", "Q") is a vocabulary
+                # letter heading, not a topic; bare numbering is a real topic
+                or (sum(c.isalpha() for c in title) < 3
+                    and not any(c.isdigit() for c in title))
                 or length_by_title[title] < MIN_TOPIC_CHARS
                 # a title-page section repeats the book's own title/series
                 or (norm and norm in normalize(r["source"] or ""))

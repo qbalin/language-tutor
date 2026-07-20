@@ -423,17 +423,20 @@ def cmd_next(args):
     card = first_due_card(lang)
     if card:
         rows = grammar_rows(lang)
-        fpos = frontier_pos(lang, rows, topic_inventory(rows, covered_refs(lang)))
+        topics = topic_inventory(rows, covered_refs(lang))
+        fpos = frontier_pos(lang, rows, topics)
         level = ("" if fpos is None else
                  " Pitch vocabulary and sentence difficulty at the student's "
                  f"overall level — around \"{display_title(rows[fpos])}\" — "
                  "not at the minimum the concept needs.")
         # If a corpus frequency list exists, tell the tutor to seed vocabulary
-        # from it (level-appropriate rank ceiling from the frontier position)
-        # instead of reaching for the same stock words.
+        # from it, with a rank ceiling scaled to how far the student is through
+        # the real topics (raw section index is useless here — the whole course
+        # sits in the book's first quarter, the rest is back matter).
         vocab = ""
         if db_path(lang, FREQ_DB).exists():
-            frac = (fpos + 1) / len(rows) if fpos is not None and rows else 0.4
+            frac = (sum(1 for t in topics if t["pos"] <= fpos) / len(topics)
+                    if fpos is not None and topics else 0.4)
             max_rank = 600 if frac < 0.33 else 1500 if frac < 0.66 else 4000
             vocab = (" Before writing, draw fresh vocabulary with ./ll dict "
                      f"sample --lang {lang} --count 15 --max-rank {max_rank} "

@@ -1,0 +1,24 @@
+# Apparatus titles specific to this language's grammar books, one substring
+# per line. A section whose title contains any of these (compared after
+# lowercasing and stripping diacritics) is excluded from the topic inventory.
+# Changing this file needs no re-ingest; it is read on every session command.
+
+# Wheelock's Latin, 7th ed. — back-matter reading collections and form tables
+loci antiq
+loci imm
+vocabvla
+svmmarivm
+self-tutorial
+
+# Wheelock's recurring per-chapter section marks; subsections inherit them as
+# a "(REGION)" title suffix, so these also catch e.g. reading passages under
+# LĒCTIŌ. "grammatica (" keeps the bare region heading out while leaving the
+# actual grammar subsections beneath it as topics.
+grammatica (
+lectio
+exercitatio
+sententiae
+latina est
+scripta in parietibus
+praefati
+authors and works

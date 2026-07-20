@@ -97,7 +97,7 @@ def read_pdf(path: Path):
 
 
 # Publisher headings marked as styled paragraphs rather than <h*> tags
-# (class contains "head", e.g. Wheelock's p.chapterHeadA/B/C). <p> only:
+# (class contains "head", e.g. p.chapterHeadA/B/C). <p> only:
 # a div with a head class typically wraps the real <h*> tag. The trailing
 # letter of the class carries the depth (HeadA > HeadB > HeadC).
 STYLED_HEAD_RE = re.compile(

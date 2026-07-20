@@ -42,3 +42,11 @@ description: Set up the dictionary and grammar for a new language. Use when sess
    Re-run this any time files are added or replaced; it rebuilds the index.
 
 3. **Verify**: `./ll session start --lang <lang>` must report `"ready": true`.
+
+4. **Prune apparatus (optional)**: if `./ll session next-topic` proposes
+   non-topics — the book's own reading passages, exercise sections, per-chapter
+   section marks — list those title substrings in
+   `languages/<lang>/grammar_skip.txt` (one per line, `#` comments; see
+   `languages/latin/grammar_skip.txt` for an example). Universal front matter
+   (contents, preface, index, ...) is already filtered; the file is only for
+   apparatus named by this particular book. No re-ingest needed.

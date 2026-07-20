@@ -6,6 +6,10 @@ __pycache__/
 # Language data (large downloads/DBs) and student progress — personal, never shared
 languages/*
 !languages/.gitkeep
+# ... but per-book apparatus skip lists are shareable config, not student data
+!languages/*/
+languages/*/*
+!languages/*/grammar_skip.txt
 
 # Progress checkpoints — the student's own git repo with a PRIVATE remote
 progress/

@@ -139,21 +139,34 @@ def frontier_ref(lang):
     return rows[0]["value"] if rows else None
 
 
-# Titles that are book apparatus, not grammar topics (matched against the
-# diacritic-stripped lowercase title, so e.g. INTRŌDVCTIŌ is caught).
+# Titles that are book apparatus in any grammar, not topics (matched against
+# the diacritic-stripped lowercase title). Apparatus specific to one book
+# (chapter section marks, named reading/exercise sections) belongs in that
+# language's grammar_skip.txt, not here.
 FRONT_MATTER = ("contents", "foreword", "preface", "introd", "acknowledg",
                 "copyright", "dedication", "index", "bibliograph", "glossar",
                 "about the", "maps", "illustration", "abbreviation", "edition",
                 "title page", "epigraph", "also by", "credits", "endorsement",
                 "appendix", "footnote", "backmatter", "back matter",
-                "answer key", "key to", "self-tutorial", "searchable",
-                "loci antiq", "loci imm", "vocabvla", "svmmarivm",
-                # recurring per-chapter apparatus (Wheelock's section marks;
-                # subsections inherit them as a "(REGION)" title suffix, so
-                # these also catch e.g. reading passages under LĒCTIŌ)
-                "grammatica (", "lectio", "exercitatio", "exercises for",
-                "sententiae", "latina est", "scripta in parietibus",
-                "praefati", "authors and works", "alphabet", "pronunciation")
+                "answer key", "key to", "searchable", "exercises for",
+                "alphabet", "pronunciation")
+
+
+def book_skip_terms(lang):
+    """Book-specific apparatus titles from languages/<lang>/grammar_skip.txt:
+    one substring per line, '#' starts a comment. Matched the same way as
+    FRONT_MATTER, against the diacritic-stripped lowercase section title.
+    (The file lives beside the grammar/ directory, not in it, so the ingester
+    never mistakes it for a grammar source.)"""
+    path = lang_dir(lang) / "grammar_skip.txt"
+    if not path.exists():
+        return ()
+    terms = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        term = line.split("#", 1)[0].strip()
+        if term:
+            terms.append(normalize(term))
+    return tuple(terms)
 
 # Content openings that betray publishing apparatus (series lists, copyright
 # pages, book blurbs) whatever the section is titled.
@@ -176,7 +189,7 @@ def grammar_rows(lang):
     return rows
 
 
-def topic_inventory(rows, covered):
+def topic_inventory(rows, covered, skip_terms=()):
     """Real grammar topics in book order, one per title, with coverage.
 
     A ref like "s9" covers its "s9/2" subsections; any covered ref covers
@@ -195,7 +208,7 @@ def topic_inventory(rows, covered):
             continue
         seen.add(title)
         norm = normalize(title)
-        if (any(k in norm for k in FRONT_MATTER)
+        if (any(k in norm for k in FRONT_MATTER + skip_terms)
                 # a letter or two with no numbering ("G", "Q") is a vocabulary
                 # letter heading, not a topic; bare numbering is a real topic
                 or (sum(c.isalpha() for c in title) < 3
@@ -240,7 +253,7 @@ def frontier_pos(lang, rows, topics):
 
 def placement_topics(lang):
     """Evenly spaced real topics spanning the whole book, easiest first."""
-    topics = topic_inventory(grammar_rows(lang), set())
+    topics = topic_inventory(grammar_rows(lang), set(), book_skip_terms(lang))
     n = min(PLACEMENT_TOPICS, len(topics))
     if n < 2:
         picks = topics
@@ -305,7 +318,7 @@ def cmd_start(args):
 
 def next_topic_payload(lang):
     rows = grammar_rows(lang)
-    topics = topic_inventory(rows, covered_refs(lang))
+    topics = topic_inventory(rows, covered_refs(lang), book_skip_terms(lang))
     uncovered = [t for t in topics if not t["covered"]]
     if not uncovered:
         return {"next_topic": None,

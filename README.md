@@ -89,8 +89,15 @@ do at each point — so the procedure lives in code, not in the model's memory:
 5. mistakes unrelated to the current card go to an inbox
    (`./ll cards inbox add`) and are turned into new or updated cards at the
    end of the session, with your confirmation,
-6. when the deck is empty, `session next` proposes the earliest grammar topic
-   not yet covered by a card (`./ll session next-topic`).
+6. when the deck is empty, `session next` proposes a new topic around your
+   placed level (`./ll session next-topic`): usually the first uncovered
+   topic at or above the level the placement quiz recorded
+   (`./ll cards frontier set/show`), interleaved with spot checks from below
+   it — probed without teaching, to catch holes in the fundamentals. Spot
+   checks bisect the largest unprobed stretch of the book and fire as often
+   as every 2nd new topic while much of the lower book is unverified
+   (decaying to every 6th as it shrinks); ones you pass are marked known
+   (`./ll cards known add`) instead of becoming cards.
 
 ### Using a small local model
 
@@ -148,7 +155,7 @@ llama.cpp, ...) works too — expose "run `./ll ...`" as the only tool and reuse
 |---|---|
 | `./ll session start --lang X` | What exists for the language, what's missing, what's due |
 | `./ll session next --lang X` | State machine: what the tutor should do next, with the data inline |
-| `./ll session next-topic --lang X` | Earliest grammar section not yet covered by a card |
+| `./ll session next-topic --lang X` | Next uncovered topic around the student's level (or a below-level spot check) |
 | `./ll ingest_dictionary --lang X` | Build dictionary DB from kaikki.org |
 | `./ll ingest_grammar --lang X` | Index grammars from `languages/X/grammar/` |
 | `./ll dict lookup WORD...` | Identify words (lemma or inflected form + tags), whole sentences at a time |
@@ -157,6 +164,8 @@ llama.cpp, ...) works too — expose "run `./ll ...`" as the only tool and reuse
 | `./ll grammar search "..."` / `show REF` / `toc` | Search / read / list grammar sections |
 | `./ll cards due / create / grade / show / list / stats` | FSRS concept deck |
 | `./ll cards inbox add / list / resolve` | Park and triage off-topic mistakes |
+| `./ll cards frontier set / show` | The student's placed level (a grammar ref); topic selection targets it |
+| `./ll cards known add / list` | Sections proven known without a card (passed spot checks) |
 | `./ll checkpoint save / list / restore / sync` | Snapshot, inspect, roll back, and push progress backups |
 
 All state lives under `languages/<lang>/` (dictionary.db, grammar.db,

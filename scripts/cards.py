@@ -11,6 +11,10 @@ a rating (1=again 2=hard 3=good 4=easy) and never computes intervals.
   list     all cards with due dates
   inbox    holding pen for mistakes unrelated to the card under review:
              inbox add / inbox list / inbox resolve
+  frontier the student's placed level, a grammar section ref; topic selection
+           targets it: frontier set / frontier show
+  known    grammar sections proven known without needing a card (placement,
+           passed spot checks): known add / known list
   stats    deck overview
 
 Examples:
@@ -35,7 +39,8 @@ import re
 import sys
 from datetime import datetime, timezone
 
-from common import CARDS_DB, JsonArgumentParser, open_db, out, die
+from common import (CARDS_DB, GRAMMAR_DB, JsonArgumentParser, open_db, out,
+                    die)
 
 try:
     from fsrs import FSRS, Card, Rating
@@ -79,6 +84,15 @@ CREATE TABLE IF NOT EXISTS inbox (
   note TEXT,
   concept_hint TEXT,
   status TEXT DEFAULT 'open'
+);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS known_sections (
+  ref TEXT PRIMARY KEY,
+  ts TEXT NOT NULL,
+  reason TEXT
 );
 """
 
@@ -274,6 +288,56 @@ def cmd_stats(conn, args):
             "inbox_open": open_inbox}
 
 
+def grammar_position(lang, ref):
+    """Book-order position of a section ref: (position, total, title)."""
+    g = open_db(lang, GRAMMAR_DB)
+    rows = g.execute("SELECT ref, title FROM sections ORDER BY id").fetchall()
+    g.close()
+    for i, r in enumerate(rows):
+        if r["ref"] == ref:
+            return i + 1, len(rows), r["title"]
+    die(f"no grammar section with ref '{ref}'; "
+        f"see ./ll grammar toc --lang {lang}")
+
+
+def cmd_frontier(conn, args):
+    if args.frontier_cmd == "set":
+        pos, total, title = grammar_position(args.lang, args.ref)
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) "
+                     "VALUES ('frontier', ?)", (args.ref,))
+        return {"ok": True,
+                "frontier": {"ref": args.ref, "title": title,
+                             "position": pos, "of": total}}
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key = 'frontier'").fetchone()
+    if not row:
+        return {"frontier": None,
+                "note": "no frontier set; the placement quiz sets it, or run "
+                        f"./ll cards frontier set <ref> --lang {args.lang}"}
+    pos, total, title = grammar_position(args.lang, row["value"])
+    return {"frontier": {"ref": row["value"], "title": title,
+                         "position": pos, "of": total}}
+
+
+def cmd_known(conn, args):
+    if args.known_cmd == "add":
+        refs = [r.strip() for r in args.refs.split(",") if r.strip()]
+        if not refs:
+            die("--refs must list at least one grammar section ref")
+        for ref in refs:
+            grammar_position(args.lang, ref)
+        conn.executemany(
+            "INSERT OR REPLACE INTO known_sections (ref, ts, reason) "
+            "VALUES (?,?,?)",
+            [(ref, now().isoformat(), args.reason) for ref in refs])
+        return {"ok": True, "known_added": refs,
+                "note": "these sections will no longer be proposed as new "
+                        "topics"}
+    rows = conn.execute("SELECT * FROM known_sections ORDER BY ts").fetchall()
+    return {"known": [{"ref": r["ref"], "ts": r["ts"], "reason": r["reason"]}
+                      for r in rows]}
+
+
 def cmd_inbox(conn, args):
     if args.inbox_cmd == "add":
         conn.execute(
@@ -381,12 +445,28 @@ def main():
                     help="optionally also grade the target card (usually 1)")
     pr.add_argument("--dismiss", action="store_true")
 
+    p = sub.add_parser("frontier")
+    fsub = p.add_subparsers(dest="frontier_cmd", required=True)
+    pf = lang(fsub.add_parser("set"))
+    pf.add_argument("ref", help="grammar section ref of the student's level")
+    lang(fsub.add_parser("show"))
+
+    p = sub.add_parser("known")
+    ksub = p.add_subparsers(dest="known_cmd", required=True)
+    pk = lang(ksub.add_parser("add"))
+    pk.add_argument("--refs", required=True,
+                    help="comma-separated grammar section refs proven known")
+    pk.add_argument("--reason", default=None,
+                    help='e.g. "placement" or "spot check passed"')
+    lang(ksub.add_parser("list"))
+
     args = ap.parse_args()
     conn = open_db(args.lang, CARDS_DB, must_exist=False)
     conn.executescript(SCHEMA)
     handlers = {"due": cmd_due, "create": cmd_create, "grade": cmd_grade,
                 "mistake": cmd_mistake, "show": cmd_show, "history": cmd_history,
-                "list": cmd_list, "stats": cmd_stats, "inbox": cmd_inbox}
+                "list": cmd_list, "stats": cmd_stats, "inbox": cmd_inbox,
+                "frontier": cmd_frontier, "known": cmd_known}
     result = handlers[args.cmd](conn, args)
     conn.commit()
     out(result)

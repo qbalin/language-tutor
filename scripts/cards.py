@@ -5,7 +5,6 @@ a rating (1=again 2=hard 3=good 4=easy) and never computes intervals.
   create   new concept card (due immediately)
   grade    record a review with every prompt/answer pair of the exercise set;
            optionally log the mistake that caused a failing grade
-  mistake  log a mistake on a card without grading it
   show     full card detail
   history  all reviews of a card with their date, rating, and prompt/answer pairs
   list     all cards with due dates
@@ -125,12 +124,11 @@ def recent_mistakes(conn, card_id, limit=3):
 
 
 def log_mistake(conn, card_id, args):
-    if args.produced or args.note or getattr(args, "expected", None):
+    if args.produced or args.note:
         conn.execute(
-            "INSERT INTO mistakes (card_id, ts, produced, expected, note) "
-            "VALUES (?,?,?,?,?)",
-            (card_id, now().isoformat(), args.produced,
-             getattr(args, "expected", None), args.note))
+            "INSERT INTO mistakes (card_id, ts, produced, note) "
+            "VALUES (?,?,?,?)",
+            (card_id, now().isoformat(), args.produced, args.note))
 
 
 def apply_review(conn, card_id, rating_int):
@@ -231,14 +229,6 @@ def cmd_grade(conn, args):
     return {"ok": True, "card": args.card_id, "rating": rating,
             "exercises_recorded": len(prompts), "next_due": due.isoformat(),
             "note": note}
-
-
-def cmd_mistake(conn, args):
-    get_card(conn, args.card_id)
-    if not (args.produced or args.note):
-        die("provide --produced and/or --note")
-    log_mistake(conn, args.card_id, args)
-    return {"ok": True, "card": args.card_id, "logged": True}
 
 
 def cmd_show(conn, args):
@@ -410,14 +400,7 @@ def main():
                         "avoids shell quoting")
     p.add_argument("--produced", default=None,
                    help="what the student wrote (log with failing grades)")
-    p.add_argument("--expected", default=None)
     p.add_argument("--note", default=None, help="what went wrong")
-
-    p = lang(sub.add_parser("mistake"))
-    p.add_argument("card_id")
-    p.add_argument("--produced", default=None)
-    p.add_argument("--expected", default=None)
-    p.add_argument("--note", default=None)
 
     p = lang(sub.add_parser("show"))
     p.add_argument("card_id")
@@ -464,7 +447,7 @@ def main():
     conn = open_db(args.lang, CARDS_DB, must_exist=False)
     conn.executescript(SCHEMA)
     handlers = {"due": cmd_due, "create": cmd_create, "grade": cmd_grade,
-                "mistake": cmd_mistake, "show": cmd_show, "history": cmd_history,
+                "show": cmd_show, "history": cmd_history,
                 "list": cmd_list, "stats": cmd_stats, "inbox": cmd_inbox,
                 "frontier": cmd_frontier, "known": cmd_known}
     result = handlers[args.cmd](conn, args)

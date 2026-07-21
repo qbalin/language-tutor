@@ -2,8 +2,10 @@
 
   search   full-text search, returns refs + snippets
       python scripts/grammar.py search "ablative absolute" --lang latin
-  show     print a full section by ref (as returned by search/toc)
+  show     print a full section by ref (as returned by search/toc), plus the
+           sections on either side, which often qualify the rule
       python scripts/grammar.py show 419 --lang latin
+      python scripts/grammar.py show 419 --lang latin --no-neighbors
   toc      list all sections (the topic inventory for picking new cards)
       python scripts/grammar.py toc --lang latin --offset 0
 """
@@ -35,10 +37,33 @@ def cmd_show(conn, args):
             (args.ref + "%",)).fetchall()
     if not rows:
         return {"error": f"no section with ref '{args.ref}'"}
-    return {"sections": [{"ref": r["ref"], "title": r["title"],
-                          "source": r["source"],
-                          "content": r["content"][:args.max_chars]}
-                         for r in rows]}
+
+    def render(r):
+        return {"ref": r["ref"], "title": r["title"], "source": r["source"],
+                "content": r["content"][:args.max_chars]}
+
+    result = {"sections": [render(r) for r in rows]}
+    if args.neighbors <= 0:
+        return result
+
+    # A rule is rarely self-contained: the section that qualifies it usually
+    # sits next to it, and a reader who only fetches the ref they were handed
+    # never learns that the qualification exists.
+    seen = {r["ref"] for r in rows}
+    around = []
+    for r in rows:
+        for n in conn.execute(
+                "SELECT * FROM sections WHERE id BETWEEN ? AND ? ORDER BY id",
+                (r["id"] - args.neighbors, r["id"] + args.neighbors)):
+            if n["ref"] not in seen:
+                seen.add(n["ref"])
+                around.append(render(n))
+    if around:
+        result["context_sections"] = around
+        result["note"] = ("context_sections are the sections surrounding the "
+                          "one you asked for. They often qualify or contradict "
+                          "it -- read them before stating the rule.")
+    return result
 
 
 def cmd_toc(conn, args):
@@ -67,6 +92,11 @@ def main():
     p.add_argument("ref")
     p.add_argument("--lang", required=True)
     p.add_argument("--max-chars", type=int, default=5000)
+    p.add_argument("--neighbors", type=int, default=1, metavar="N",
+                   help="also return the N sections on either side, which "
+                        "often qualify the rule (0 to disable; default 1)")
+    p.add_argument("--no-neighbors", dest="neighbors", action="store_const",
+                   const=0, help="return only the requested section")
 
     p = sub.add_parser("toc")
     p.add_argument("--lang", required=True)

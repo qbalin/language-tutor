@@ -5,11 +5,6 @@
       "Bash(ls:*)",
       "Read(languages/**)",
       "Read(scripts/**)"
-    ],
-    "deny": [
-      "WebFetch",
-      "WebSearch",
-      "Task"
     ]
   }
 }

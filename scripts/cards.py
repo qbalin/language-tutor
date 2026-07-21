@@ -23,8 +23,11 @@ Examples:
       --prompt "Translate: with the city captured, ..." --answer "urbe capta erat ..." \
       --prompt "Translate: with the king expelled, ..." --answer "rege expulso ..." \
       --produced "urbe capta erat" --note "used erat inside the construction"
-  # same, without shell quoting: write the set to a JSON file
-  # [{"prompt": "...", "answer": "..."}, ...] and pass it (or "-" for stdin):
+  # same, without repeating flags: pass the whole set as one JSON argument
+  python scripts/cards.py grade ablative-absolute 1 --lang latin \
+      --pairs-json '[{"prompt": "...", "answer": "..."}]' \
+      --note "used erat inside the construction"
+  # or from a file (or "-" for stdin), for callers that can write one:
   python scripts/cards.py grade ablative-absolute 1 --lang latin \
       --pairs-file /tmp/set.json --note "used erat inside the construction"
   python scripts/cards.py history ablative-absolute --lang latin
@@ -34,9 +37,11 @@ Examples:
 """
 import argparse
 import json
+import os
 import re
 import sys
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 
 from common import (CARDS_DB, GRAMMAR_DB, JsonArgumentParser, open_db, out,
                     die)
@@ -179,19 +184,58 @@ def cmd_create(conn, args):
             "note": "card is due immediately"}
 
 
+# A review set is written and graded minutes apart. Anything older is a
+# leftover from an earlier session: grading it would silently record exercises
+# the student never saw, against a card they did not answer.
+PAIRS_MAX_AGE_S = 30 * 60
+
+
+def validate_pairs(pairs, source):
+    if (not isinstance(pairs, list) or not pairs
+            or not all(isinstance(p, dict) and p.get("prompt") and p.get("answer")
+                       for p in pairs)):
+        die(f"{source} must be a non-empty JSON list like "
+            '[{"prompt": "...", "answer": "..."}, ...] '
+            "with both keys non-empty in every item")
+    return pairs
+
+
 def read_pairs(path):
+    if path != "-":
+        try:
+            age = time.time() - os.path.getmtime(path)
+        except OSError as e:
+            die(f"could not read exercise pairs from {path}: {e}")
+        if age > PAIRS_MAX_AGE_S:
+            die(f"{path} was last written {int(age // 60)} minutes ago, so it is "
+                "almost certainly left over from an earlier session; grading it "
+                "would record exercises the student never saw. Pass this set's "
+                "pairs inline with --pairs-json, or write them to a fresh file.")
     try:
         text = sys.stdin.read() if path == "-" else open(path, encoding="utf-8").read()
         pairs = json.loads(text)
     except (OSError, json.JSONDecodeError) as e:
         die(f"could not read exercise pairs from {path}: {e}")
-    if (not isinstance(pairs, list)
-            or not all(isinstance(p, dict) and p.get("prompt") and p.get("answer")
-                       for p in pairs)):
-        die('the pairs file must be a JSON list like '
-            '[{"prompt": "...", "answer": "..."}, ...] '
-            "with both keys non-empty in every item")
-    return pairs
+    return validate_pairs(pairs, "the pairs file")
+
+
+def duplicate_review(conn, card_id, rating_int, prompts):
+    """A retry after a failed grade call is not a second review.
+
+    Models routinely re-issue `grade` after a malformed first attempt; without
+    this the same set lands twice and FSRS schedules off a doubled history.
+    """
+    cutoff = (now() - timedelta(minutes=10)).isoformat()
+    rows = conn.execute(
+        "SELECT id, ts FROM reviews WHERE card_id = ? AND rating = ? AND ts >= ? "
+        "ORDER BY id DESC", (card_id, rating_int, cutoff)).fetchall()
+    for r in rows:
+        prev = [x["prompt"] for x in conn.execute(
+            "SELECT prompt FROM exercises WHERE review_id = ? ORDER BY id",
+            (r["id"],)).fetchall()]
+        if prev == list(prompts):
+            return r
+    return None
 
 
 def cmd_grade(conn, args):
@@ -200,17 +244,38 @@ def cmd_grade(conn, args):
         die("rating must be 1-4 or again/hard/good/easy")
     prompts = args.prompt or []
     answers = args.answer or []
+    if args.pairs_json:
+        try:
+            inline = json.loads(args.pairs_json)
+        except json.JSONDecodeError as e:
+            die(f"--pairs-json is not valid JSON: {e}")
+        for p in validate_pairs(inline, "--pairs-json"):
+            prompts.append(p["prompt"])
+            answers.append(p["answer"])
     if args.pairs_file:
         pairs = read_pairs(args.pairs_file)
         prompts += [p["prompt"] for p in pairs]
         answers += [p["answer"] for p in pairs]
     if not prompts:
         die("grading requires the exercises: repeat --prompt \"...\" "
-            "--answer \"...\" for each exercise in the set, or pass them "
-            'as --pairs-file <file.json> ([{"prompt": ..., "answer": ...}, ...])')
+            "--answer \"...\" for each exercise in the set, or pass the whole "
+            'set as --pairs-json \'[{"prompt": ..., "answer": ...}, ...]\' '
+            "(--pairs-file <file.json> does the same from a file, for callers "
+            "that can write one)")
     if len(prompts) != len(answers):
         die(f"got {len(prompts)} --prompt but {len(answers)} --answer; "
             "each --prompt needs a matching --answer")
+    dup = duplicate_review(conn, args.card_id, rating, prompts)
+    if dup:
+        return {"ok": True, "card": args.card_id, "rating": rating,
+                "recorded": False, "duplicate_of_review": dup["id"],
+                "exercises_recorded": 0,
+                "note": f"this exact set was already graded at {dup['ts']}; "
+                        "nothing was recorded a second time. If the student "
+                        "really answered a new set, grade it with those "
+                        "prompts. Otherwise carry on: give the per-item "
+                        "verdicts to the student, then run "
+                        f"./ll session next --lang {args.lang}"}
     if rating <= 2:
         log_mistake(conn, args.card_id, args)
     refs = get_card(conn, args.card_id)["grammar_refs"]
@@ -219,9 +284,12 @@ def cmd_grade(conn, args):
         "INSERT INTO exercises (card_id, review_id, prompt, answer) "
         "VALUES (?,?,?,?)",
         [(args.card_id, review_id, p, a) for p, a in zip(prompts, answers)])
-    note = ("now give a per-item verdict, the full correction for any mistake, "
-            "and one dict/grammar-verified alternate phrasing per item, then "
-            f"run: ./ll session next --lang {args.lang}")
+    note = ("STOP calling tools and write the student a message now: a "
+            "per-item verdict, the full correction for any mistake, and one "
+            "dict/grammar-verified alternate phrasing per item. The grade you "
+            "just recorded is invisible to them — feedback they never see is "
+            "the same as no review. Only once you have sent it, run: "
+            f"./ll session next --lang {args.lang}")
     if rating <= 2 and refs:
         note = (f"card failed: run ./ll grammar show <ref> --lang {args.lang} "
                 f"for each of refs {refs} and quote the rule verbatim to the "
@@ -394,6 +462,10 @@ def main():
                    help="an exercise as shown to the student; repeat per exercise")
     p.add_argument("--answer", action="append",
                    help="the student's answer; one per --prompt, same order")
+    p.add_argument("--pairs-json", default=None, metavar="JSON",
+                   help='the whole set inline: \'[{"prompt": "...", '
+                        '"answer": "..."}, ...]\' — needs no file, so it works '
+                        "from harnesses that cannot write one")
     p.add_argument("--pairs-file", default=None, metavar="FILE",
                    help='JSON file (or "-" for stdin) with the whole set: '
                         '[{"prompt": "...", "answer": "..."}, ...] — '

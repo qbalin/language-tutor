@@ -48,16 +48,22 @@ field in a command's output is an instruction to you — follow it.
      `./ll grammar show <ref> --lang <lang>`.
 3. Grade the card once, on the whole set: 1 = failed the concept, 2 = faltered
    or needed help, 3 = concept correct on every item (minor unrelated slips
-   allowed), 4 = every item correct and effortless. Write the set with the
-   student's verbatim answers to a JSON file
-   (`[{"prompt": "...", "answer": "..."}, ...]`) and run:
-   `./ll cards grade <id> <rating> --lang <lang> --pairs-file <file>`
-   (add `--note "what went wrong"` on 1–2). Then follow the `note` in its
-   output: per-item verdicts, full corrected solutions for every mistake, one
-   dict/grammar-verified alternate phrasing per item, citing the section refs
-   and lookups you actually retrieved this session; on 1–2, quote the card's
-   grammar sections verbatim via `grammar show` — do not paraphrase.
-4. If an answer contains a mistake UNRELATED to the current card, do not touch
+   allowed), 4 = every item correct and effortless. Pass the set with the
+   student's verbatim answers inline:
+   `./ll cards grade <id> <rating> --lang <lang> --pairs-json '[{"prompt": "...", "answer": "..."}, ...]'`
+   (add `--note "what went wrong"` on 1–2). `--pairs-file <file>` does the
+   same from a file if you can write one — but never point it at a path you
+   did not just create: a leftover file records exercises the student never
+   saw.
+4. Then follow the `note` in the grade output, and follow it *before* your
+   next tool call: per-item verdicts, full corrected solutions for every
+   mistake, one dict/grammar-verified alternate phrasing per item, citing the
+   section refs and lookups you actually retrieved this session; on 1–2, quote
+   the card's grammar sections verbatim via `grammar show` — do not
+   paraphrase. This goes to the student as a message. A `--note` argument is a
+   private record, not feedback; a review the student never sees taught them
+   nothing, so never run `session next` with the verdicts still unsent.
+5. If an answer contains a mistake UNRELATED to the current card, do not touch
    other cards mid-session:
    `./ll cards inbox add --lang <lang> --produced "..." --note "..." --concept-hint "..."`
 

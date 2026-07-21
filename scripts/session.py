@@ -460,11 +460,13 @@ def cmd_next(args):
                  f"lookup <word> <word> ... --lang {lang} (batch the words), "
                  "./ll dict inflections and ./ll grammar search/show — never "
                  "from memory. Grade once for the whole set (1 failed / 2 "
-                 "faltered / 3 correct / 4 effortless): write "
-                 '[{"prompt": "...", "answer": "..."}, ...] with verbatim '
-                 "answers to a JSON file and run ./ll cards grade "
-                 f"{card['id']} <rating> --lang {lang} --pairs-file <file> "
-                 "(--note on failure), then follow the note in its output. "
+                 "faltered / 3 correct / 4 effortless): run ./ll cards grade "
+                 f"{card['id']} <rating> --lang {lang} --pairs-json "
+                 '\'[{"prompt": "...", "answer": "..."}, ...]\' with their '
+                 "verbatim answers (--note on failure), then follow the note "
+                 "in its output before any further tool call — the per-item "
+                 "verdicts go to the student as a message, and a --note is a "
+                 "private record, not feedback. "
                  "Unrelated mistakes: ./ll cards inbox add --lang "
                  f"{lang} --produced \"...\" --note \"...\"; {rerun}"})
         return

@@ -1,0 +1,17 @@
+# Apparatus titles specific to this language's grammar books, one substring
+# per line. A section whose title contains any of these (compared after
+# lowercasing and stripping diacritics) is excluded from the topic inventory.
+# Changing this file needs no re-ingest; it is read on every session command.
+
+# Smyth's Greek Grammar for Colleges (Alpheios/Perseus digitization) — these
+# are structural wrapper headers, not lessons: the real numbered content
+# lives directly at Smyth's own citation numbers (e.g. ref "313"). Each
+# wrapper's body is just a table of contents for its children.
+part i: letters
+part ii: inflection
+part iii: formation of words
+part iv: syntax
+
+# Catalogue of Important Verbs (appendix) headers, one per initial letter —
+# a reference list to search, not a single teachable concept.
+verbs beginning with

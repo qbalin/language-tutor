@@ -17,3 +17,6 @@ progress/
 # Local overrides
 .claude/settings.local.json
 .DS_Store
+
+# Alias for preferred model
+tutor.sh

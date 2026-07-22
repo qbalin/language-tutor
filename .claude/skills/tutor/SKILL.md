@@ -49,8 +49,10 @@ field in a command's output is an instruction to you — follow it.
 3. Grade the card once, on the whole set: 1 = failed the concept, 2 = faltered
    or needed help, 3 = concept correct on every item (minor unrelated slips
    allowed), 4 = every item correct and effortless. Pass the set with the
-   student's verbatim answers inline:
-   `./ll cards grade <id> <rating> --lang <lang> --pairs-json '[{"prompt": "...", "answer": "..."}, ...]'`
+   student's verbatim answers inline, scoring each exercise on the same 1–4
+   scale — the set rating is what FSRS schedules from, the per-item `score`
+   is the record of how that one exercise actually went:
+   `./ll cards grade <id> <rating> --lang <lang> --pairs-json '[{"prompt": "...", "answer": "...", "score": 3}, ...]'`
    (add `--note "what went wrong"` on 1–2). `--pairs-file <file>` does the
    same from a file if you can write one — but never point it at a path you
    did not just create: a leftover file records exercises the student never

@@ -3,10 +3,12 @@ a rating (1=again 2=hard 3=good 4=easy) and never computes intervals.
 
   due      cards due now (includes each card's recent mistakes)
   create   new concept card (due immediately)
-  grade    record a review with every prompt/answer pair of the exercise set;
-           optionally log the mistake that caused a failing grade
+  grade    record a review with every prompt/answer pair of the exercise set,
+           each optionally scored 1-4 on its own; optionally log the mistake
+           that caused a failing grade
   show     full card detail
-  history  all reviews of a card with their date, rating, and prompt/answer pairs
+  history  all reviews of a card with their date, rating, and prompt/answer
+           pairs, each with the time it was answered and its score
   list     all cards with due dates
   inbox    holding pen for mistakes unrelated to the card under review:
              inbox add / inbox list / inbox resolve
@@ -23,9 +25,11 @@ Examples:
       --prompt "Translate: with the city captured, ..." --answer "urbe capta erat ..." \
       --prompt "Translate: with the king expelled, ..." --answer "rege expulso ..." \
       --produced "urbe capta erat" --note "used erat inside the construction"
-  # same, without repeating flags: pass the whole set as one JSON argument
+  # same, without repeating flags: pass the whole set as one JSON argument.
+  # "score" is optional per item and records how that one exercise went,
+  # independently of the single rating FSRS schedules from.
   python scripts/cards.py grade ablative-absolute 1 --lang latin \
-      --pairs-json '[{"prompt": "...", "answer": "..."}]' \
+      --pairs-json '[{"prompt": "...", "answer": "...", "score": 1}]' \
       --note "used erat inside the construction"
   # or from a file (or "-" for stdin), for callers that can write one:
   python scripts/cards.py grade ablative-absolute 1 --lang latin \
@@ -78,6 +82,8 @@ CREATE TABLE IF NOT EXISTS exercises (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   card_id TEXT NOT NULL REFERENCES cards(id),
   review_id INTEGER NOT NULL REFERENCES reviews(id),
+  ts TEXT,
+  score INTEGER,
   prompt TEXT NOT NULL,
   answer TEXT NOT NULL
 );
@@ -102,6 +108,24 @@ CREATE TABLE IF NOT EXISTS known_sections (
 
 RATINGS = {"1": 1, "2": 2, "3": 3, "4": 4,
            "again": 1, "hard": 2, "good": 3, "easy": 4}
+
+
+def migrate(conn):
+    """Add columns introduced after a deck was created.
+
+    `CREATE TABLE IF NOT EXISTS` leaves an existing table alone, so decks
+    built before per-exercise timestamps and scores need the columns added
+    explicitly. Old exercise rows inherit their timestamp from the review
+    they belong to, which is when they were answered; their score stays
+    NULL, because a per-item score was never recorded for them.
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(exercises)")}
+    if "ts" not in cols:
+        conn.execute("ALTER TABLE exercises ADD COLUMN ts TEXT")
+        conn.execute("UPDATE exercises SET ts = (SELECT ts FROM reviews "
+                     "WHERE reviews.id = exercises.review_id)")
+    if "score" not in cols:
+        conn.execute("ALTER TABLE exercises ADD COLUMN score INTEGER")
 
 
 def now():
@@ -136,14 +160,15 @@ def log_mistake(conn, card_id, args):
             (card_id, now().isoformat(), args.produced, args.note))
 
 
-def apply_review(conn, card_id, rating_int):
+def apply_review(conn, card_id, rating_int, when=None):
+    when = when or now()
     row = get_card(conn, card_id)
     card = Card.from_dict(json.loads(row["fsrs"]))
-    card = FSRS().repeat(card, now())[Rating(rating_int)].card
+    card = FSRS().repeat(card, when)[Rating(rating_int)].card
     conn.execute("UPDATE cards SET fsrs = ? WHERE id = ?",
                  (json.dumps(card.to_dict(), default=str), card_id))
     cur = conn.execute("INSERT INTO reviews (card_id, ts, rating) VALUES (?,?,?)",
-                       (card_id, now().isoformat(), rating_int))
+                       (card_id, when.isoformat(), rating_int))
     return card.due, cur.lastrowid
 
 
@@ -190,14 +215,28 @@ def cmd_create(conn, args):
 PAIRS_MAX_AGE_S = 30 * 60
 
 
+def parse_score(value, source):
+    """A per-exercise score on the same 1-4 scale as the card rating, or
+    None when the caller did not score that item individually."""
+    if value is None or value == "":
+        return None
+    score = RATINGS.get(str(value).lower())
+    if not score:
+        die(f"{source}: score must be 1-4 or again/hard/good/easy, "
+            f"got {value!r}")
+    return score
+
+
 def validate_pairs(pairs, source):
     if (not isinstance(pairs, list) or not pairs
             or not all(isinstance(p, dict) and p.get("prompt") and p.get("answer")
                        for p in pairs)):
         die(f"{source} must be a non-empty JSON list like "
-            '[{"prompt": "...", "answer": "..."}, ...] '
-            "with both keys non-empty in every item")
-    return pairs
+            '[{"prompt": "...", "answer": "...", "score": 3}, ...] '
+            "with prompt and answer non-empty in every item "
+            "(score is optional, 1-4)")
+    return [{"prompt": p["prompt"], "answer": p["answer"],
+             "score": parse_score(p.get("score"), source)} for p in pairs]
 
 
 def read_pairs(path):
@@ -242,8 +281,14 @@ def cmd_grade(conn, args):
     rating = RATINGS.get(str(args.rating).lower())
     if not rating:
         die("rating must be 1-4 or again/hard/good/easy")
-    prompts = args.prompt or []
-    answers = args.answer or []
+    prompts = list(args.prompt or [])
+    answers = list(args.answer or [])
+    flag_scores = [parse_score(s, "--score") for s in (args.score or [])]
+    if flag_scores and len(flag_scores) != len(prompts):
+        die(f"got {len(flag_scores)} --score but {len(prompts)} --prompt; "
+            "--score is optional, but when given there must be one per "
+            "--prompt, in the same order")
+    scores = flag_scores or [None] * len(prompts)
     if args.pairs_json:
         try:
             inline = json.loads(args.pairs_json)
@@ -252,10 +297,12 @@ def cmd_grade(conn, args):
         for p in validate_pairs(inline, "--pairs-json"):
             prompts.append(p["prompt"])
             answers.append(p["answer"])
+            scores.append(p["score"])
     if args.pairs_file:
-        pairs = read_pairs(args.pairs_file)
-        prompts += [p["prompt"] for p in pairs]
-        answers += [p["answer"] for p in pairs]
+        for p in read_pairs(args.pairs_file):
+            prompts.append(p["prompt"])
+            answers.append(p["answer"])
+            scores.append(p["score"])
     if not prompts:
         die("grading requires the exercises: repeat --prompt \"...\" "
             "--answer \"...\" for each exercise in the set, or pass the whole "
@@ -279,11 +326,13 @@ def cmd_grade(conn, args):
     if rating <= 2:
         log_mistake(conn, args.card_id, args)
     refs = get_card(conn, args.card_id)["grammar_refs"]
-    due, review_id = apply_review(conn, args.card_id, rating)
+    when = now()
+    due, review_id = apply_review(conn, args.card_id, rating, when)
     conn.executemany(
-        "INSERT INTO exercises (card_id, review_id, prompt, answer) "
-        "VALUES (?,?,?,?)",
-        [(args.card_id, review_id, p, a) for p, a in zip(prompts, answers)])
+        "INSERT INTO exercises (card_id, review_id, ts, score, prompt, answer) "
+        "VALUES (?,?,?,?,?,?)",
+        [(args.card_id, review_id, when.isoformat(), s, p, a)
+         for p, a, s in zip(prompts, answers, scores)])
     note = ("STOP calling tools and write the student a message now: a "
             "per-item verdict, the full correction for any mistake, and one "
             "dict/grammar-verified alternate phrasing per item. The grade you "
@@ -317,10 +366,11 @@ def cmd_history(conn, args):
     history = []
     for rev in reviews:
         pairs = conn.execute(
-            "SELECT prompt, answer FROM exercises WHERE review_id = ? ORDER BY id",
-            (rev["id"],)).fetchall()
+            "SELECT ts, score, prompt, answer FROM exercises "
+            "WHERE review_id = ? ORDER BY id", (rev["id"],)).fetchall()
         history.append({"ts": rev["ts"], "rating": rev["rating"],
-                        "exercises": [{"prompt": p["prompt"],
+                        "exercises": [{"ts": p["ts"], "score": p["score"],
+                                       "prompt": p["prompt"],
                                        "answer": p["answer"]} for p in pairs]})
     return {"card": args.card_id, "reviews": len(history), "history": history}
 
@@ -462,14 +512,18 @@ def main():
                    help="an exercise as shown to the student; repeat per exercise")
     p.add_argument("--answer", action="append",
                    help="the student's answer; one per --prompt, same order")
+    p.add_argument("--score", action="append",
+                   help="optional per-exercise score, 1-4 on the same scale as "
+                        "the card rating; one per --prompt, same order")
     p.add_argument("--pairs-json", default=None, metavar="JSON",
                    help='the whole set inline: \'[{"prompt": "...", '
-                        '"answer": "..."}, ...]\' — needs no file, so it works '
-                        "from harnesses that cannot write one")
+                        '"answer": "...", "score": 3}, ...]\' — needs no file, '
+                        "so it works from harnesses that cannot write one; "
+                        '"score" is optional per item')
     p.add_argument("--pairs-file", default=None, metavar="FILE",
                    help='JSON file (or "-" for stdin) with the whole set: '
-                        '[{"prompt": "...", "answer": "..."}, ...] — '
-                        "avoids shell quoting")
+                        '[{"prompt": "...", "answer": "...", "score": 3}, ...] '
+                        "— avoids shell quoting")
     p.add_argument("--produced", default=None,
                    help="what the student wrote (log with failing grades)")
     p.add_argument("--note", default=None, help="what went wrong")
@@ -518,6 +572,7 @@ def main():
     args = ap.parse_args()
     conn = open_db(args.lang, CARDS_DB, must_exist=False)
     conn.executescript(SCHEMA)
+    migrate(conn)
     handlers = {"due": cmd_due, "create": cmd_create, "grade": cmd_grade,
                 "show": cmd_show, "history": cmd_history,
                 "list": cmd_list, "stats": cmd_stats, "inbox": cmd_inbox,
